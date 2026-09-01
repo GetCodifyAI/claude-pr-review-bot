@@ -1,0 +1,11 @@
+# Never commit a real config — secrets live only in ~/.claude-pr-bot/.env on the box.
+.env
+*.pem
+# Runtime state, if anyone ever runs the bot from inside a clone of this repo.
+state/
+queue.json
+seen
+used-nonces
+*.log
+__pycache__/
+.DS_Store

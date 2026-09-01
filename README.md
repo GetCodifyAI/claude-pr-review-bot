@@ -1,0 +1,78 @@
+# Claude PR Review Bot
+
+Someone requests your review on a Cut+Dry PR → you get a **Slack card** → you click through
+to a **dashboard** on your own staging box → an agent has already read the diff and written
+findings → you tick the ones worth posting, edit any of them, and post **as yourself**.
+
+Nothing reaches GitHub without a human clicking. The review step never writes to GitHub at
+all — it only produces a JSON file the dashboard renders.
+
+```
+review requested
+  └─ pr-watch.sh (cron, every 3 min) → queue.json + Slack card
+       └─ you click "Open review"  → /prbot/pr?pr=N   (first visit starts the review)
+            └─ run-review.sh → claude -p → review.json          (~10–15 min)
+                 └─ Slack: verdict + link back to the dashboard
+                      └─ select / edit findings → Post to GitHub  (plain COMMENT review)
+                           └─ Approve → LGTM comment + approval
+```
+
+## Why this exists
+
+The manual version of this is: notice a review request, pull the branch, run the `pr-review`
+skill in Claude Code, read the output, decide what's worth saying, retype it into GitHub.
+That is 20 minutes of context-switching per PR, and it is the part that gets skipped when
+you're busy.
+
+This automates every step except the two that need judgment: **which findings are worth
+posting**, and **whether to approve**. Those stay clicks.
+
+Two things it deliberately does *not* do:
+
+- **It never posts as a bot.** Every comment, review and approval goes out under your own
+  GitHub account, via your own PAT. If your name is on it, you chose it.
+- **It never requests changes.** Posting is always a plain `COMMENT` review — these are
+  review notes, not a merge block. The agent's verdict is shown to you as an *assessment*
+  and nothing more.
+
+## Get started
+
+- **[docs/SETUP.md](docs/SETUP.md)** — the install, start to finish. Budget 30 minutes.
+- **[docs/OPERATIONS.md](docs/OPERATIONS.md)** — logs, restarts, gotchas, known limits.
+- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — how the pieces fit and why they sit
+  where they do. Read this before changing anything.
+- **[docs/SECURITY.md](docs/SECURITY.md)** — the endpoint is on the public internet. Read
+  this before going live.
+
+Everyone runs their **own instance** on their **own staging box**, against their **own**
+review queue. There is no shared deployment — the bot polls for PRs awaiting *your* review
+and posts under *your* name, so a shared one would make no sense.
+
+## Layout
+
+| Path                        | What                                                                |
+| --------------------------- | ------------------------------------------------------------------- |
+| `bin/bootstrap.sh`          | Installs everything. Idempotent — re-run it whenever                |
+| `bin/pr-watch.sh`           | cron, every 3 min: finds PRs awaiting your review, posts Slack cards |
+| `bin/prbot-server.py`       | The dashboard. systemd, bound to `127.0.0.1:8899`                   |
+| `bin/run-review.sh`         | One review: worktree → `claude -p` → `review.json`                  |
+| `bin/prbot_diff.py`         | Diff-anchor validation, so GitHub can't 422 a whole review          |
+| `bin/prbot_md.py`           | Dependency-free markdown → HTML                                     |
+| `bin/lib-common.sh`         | Config, HMAC link signing, Slack posting                            |
+| `skills/pr-review/SKILL.md` | The review procedure. Bootstrap installs it to `~/.claude/skills/`  |
+| `config.example`            | Every `.env` knob, annotated. Reference only — bootstrap writes the real one |
+
+## Requirements
+
+- A Cut+Dry **nonprod staging box** you control (push a `*-staging` branch, CircleCI builds
+  the stack — see `infrastructure/CLAUDE.md` in the monolith).
+- **Claude Code signed in** on that box, as the box user.
+- A GitHub **classic PAT** with `repo` scope, belonging to you.
+- A **Slack incoming webhook** pointed at a private channel. Optional, but the Slack card is
+  most of the value — without it you have to remember to open the dashboard.
+
+## A caveat worth knowing up front
+
+Each review is a full agent run against a real diff, on your Claude subscription — roughly
+10–15 minutes for a 25-file PR, and it counts against your weekly usage. That is exactly why
+the review is **click-to-run** rather than automatic on every review request.
