@@ -682,6 +682,33 @@ color:var(--fg);letter-spacing:-.02em}
 .brand .tag{color:var(--faint);font-weight:500;font-size:.82rem;margin-left:2px;
 border-left:1px solid var(--line);padding-left:10px}
 @media(max-width:520px){.brand .tag{display:none}}
+.navr{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:.85rem}
+.navr a{color:var(--dim)}.navr a:hover{color:var(--fg)}
+.navr .who{display:inline-flex;align-items:center;gap:7px;color:var(--fg);font-weight:550;
+background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:4px 12px 4px 5px}
+.navr .who .av{width:22px;height:22px;border-radius:50%;background:var(--grad);color:#fff;
+display:inline-flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700}
+.navr .live{font-size:.7rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+padding:3px 9px;border-radius:999px}
+.navr .live.on{background:var(--okbg);color:#6fe6b2;border:1px solid var(--okln)}
+.navr .live.dry{background:var(--warnbg);color:#f6cd8a;border:1px solid var(--warnln)}
+@media(max-width:560px){.navr .who span.nm,.navr .lbl{display:none}}
+/* stat strip */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:20px 0 4px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;
+box-shadow:var(--shadow);transition:transform .15s,border-color .15s;display:block}
+.stat:hover{transform:translateY(-2px);border-color:#31384d;text-decoration:none}
+.stat .k{font-size:2rem;font-weight:750;letter-spacing:-.03em;line-height:1;color:var(--fg)}
+.stat.hot .k{background:var(--grad);-webkit-background-clip:text;background-clip:text;
+-webkit-text-fill-color:transparent}
+.stat .l{color:var(--dim);font-size:.86rem;margin-top:6px;display:flex;align-items:center;gap:6px}
+.stat.on{border-color:var(--purple);box-shadow:0 0 0 1px rgba(168,85,247,.3),var(--shadow)}
+.tabdesc{color:var(--dim);font-size:.88rem;margin:12px 2px 14px;min-height:1.2em}
+.chev{align-self:center;color:var(--faint);padding:0 16px;font-size:1.1rem;flex:none}
+.row:hover .chev{color:var(--blue)}
+.empty{padding:44px 20px;text-align:center;color:var(--dim)}
+.empty .ic{font-size:2rem;display:block;margin-bottom:8px;opacity:.7}
+.empty b{color:var(--fg);display:block;font-weight:600;margin-bottom:3px}
 .wrap{max-width:64rem;margin:0 auto;padding:30px 20px 0;animation:rise .5s cubic-bezier(.2,.7,.2,1) both}
 .crumb{font-size:.87rem;margin:0 0 14px}
 .meta{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:.87rem;
@@ -914,12 +941,13 @@ document.addEventListener('DOMContentLoaded',function(){tokcheck();slackcheck();
 """
 
 
-def shell(title, body, refresh=None):
+def shell(title, body, refresh=None, nav=""):
     r = f'<meta http-equiv=refresh content="8;url={refresh}">' if refresh else ""
     topbar = (f"<div class=topbar><a class=brand href='/prbot/'>"
               f"<img src='{prbot_assets.LOGO}' alt=''>"
               f"<span class=n>{html.escape(BRAND)}</span>"
-              f"<span class=tag>PR review</span></a></div>")
+              f"<span class=tag>PR review</span></a>"
+              f"<div class=navr>{nav}</div></div>")
     return (f"<!doctype html><html lang=en><head><meta charset=utf-8>"
             f"<meta name=viewport content='width=device-width,initial-scale=1'>"
             f"<title>{html.escape(title)} · {html.escape(BRAND)}</title>"
@@ -1150,6 +1178,17 @@ def pr_times(pr, login):
 
 TABS = [("todo", "To review"), ("reviewed", "Reviewed"), ("posted", "Posted"),
         ("approved", "Approved"), ("archived", "Archived"), ("all", "All")]
+TAB_DESC = {
+    "todo": "PRs awaiting your review. Open one to run the agent, then post the findings "
+            "worth keeping.",
+    "reviewed": "The agent has finished — read the findings and post the ones you agree with. "
+                "Nothing is on GitHub yet.",
+    "posted": "You've posted comments on these. Approve when you're satisfied, or leave them "
+              "for the author.",
+    "approved": "Done — you approved these on GitHub.",
+    "archived": "Hidden from your working set. Restore any of them anytime.",
+    "all": "Everything you've touched, except archived.",
+}
 
 
 def tab_of(st):
@@ -1685,29 +1724,57 @@ class Handler(BaseHTTPRequestHandler):
                    f"title='Move back to the queue'>restore</a>"
                    if e["st"] == "archived" else
                    f"<a class=rowact href='{link('archive', num)}' "
-                   f"title='Hide from the queue'>archive</a>") + "</div>")
+                   f"title='Hide from the queue'>archive</a>")
+                + f"<a class=chev href='{link('pr', num)}' aria-hidden=true>›</a></div>")
 
-        empty = {"todo": "Nothing waiting on you.",
-                 "reviewed": "No reviews waiting to be posted.",
-                 "posted": "Nothing posted and unapproved.",
-                 "approved": "Nothing approved yet."}.get(tab, "Queue is empty.")
+        empty = {
+            "todo": ("🎉", "You're all caught up", "No PRs are waiting on your review."),
+            "reviewed": ("📝", "Nothing to post", "Reviews you've run and not yet posted show here."),
+            "posted": ("💬", "Nothing pending approval", "PRs you've commented on but not approved."),
+            "approved": ("✅", "Nothing approved yet", "PRs you approve will be listed here."),
+            "archived": ("🗂️", "No archived PRs", "Archived PRs are hidden from your working set."),
+        }.get(tab, ("📭", "Nothing here yet", "This view is empty."))
+
+        # Stat strip — the three that matter, each a shortcut to its tab.
+        def stat(k, label, hot=False):
+            cls = "stat hot" if hot else "stat"
+            if tab == k:
+                cls += " on"
+            return (f"<a class='{cls}' href='{q(tab=k, sort=sort)}'>"
+                    f"<div class=k>{counts[k]}</div><div class=l>{label}</div></a>")
+        strip = ("<div class=stats>"
+                 + stat("todo", "Awaiting your review", hot=True)
+                 + stat("reviewed", "Ready to post")
+                 + stat("posted", "Pending approval")
+                 + stat("approved", "Approved") + "</div>")
+
+        avatar = html.escape((user[:1] or "?").upper())
+        nav = (f"<span class='live {'dry' if DRY_RUN else 'on'}'>"
+               + ("dry run" if DRY_RUN else "live") + "</span>"
+               f"<span class=who><span class=av>{avatar}</span>"
+               f"<span class=nm>{html.escape(user)}</span></span>"
+               "<a href='/prbot/settings'>Settings</a>"
+               "<a href='/prbot/logout'>Sign out</a>")
+
         slack_ok = bool((load_users().get(user) or {}).get("slack_id"))
-        body = (f"<h1>PR review queue</h1>"
-                f"<p class='muted sm'>Reviewing as <code>{html.escape(user)}</code>"
-                + ("" if DRY_RUN else " · <b>live</b> — posting and approving write to GitHub")
-                + " · <a href='/prbot/settings'>settings</a>"
-                  " · <a href='/prbot/logout'>sign out</a>"
-                + f"</p>{dry_banner()}"
+        body = (f"<h1>Your review queue</h1>"
+                f"<p class='muted sm'>Reviews requested from you across "
+                f"<code>{html.escape(REPO)}</code>. Nothing reaches GitHub without your click."
+                f"</p>{dry_banner()}"
                 + ("" if slack_ok else
                    "<div class='banner warn'><span>💬</span><div>No Slack member ID yet — "
-                   "review requests will not ping you. <a href='/prbot/settings'>Add it in "
+                   "review requests won't ping you. <a href='/prbot/settings'>Add it in "
                    "settings.</a></div></div>")
+                + strip
                 + f"<div class=tabs>{tabs}</div>"
-                  f"<div class=sortbar><span class='muted sm'>Sort</span>{sorts}</div>"
-                  f"<div class=list>"
-                + ("".join(rows) or f"<div class='rowlink muted'>{empty}</div>")
+                + f"<div class=tabdesc>{TAB_DESC.get(tab, '')}</div>"
+                + f"<div class=sortbar><span class='muted sm'>Sort</span>{sorts}</div>"
+                + "<div class=list>"
+                + ("".join(rows) if rows else
+                   f"<div class=empty><span class=ic>{empty[0]}</span>"
+                   f"<b>{empty[1]}</b>{empty[2]}</div>")
                 + "</div>")
-        return self.reply(200, shell("PR review queue", body))
+        return self.reply(200, shell("Queue", body, nav=nav))
 
     def timeline(self, pr, user):
         """reviewed → posted → approved, with dates. Reads at a glance where a PR stands."""
@@ -1947,9 +2014,11 @@ class Handler(BaseHTTPRequestHandler):
         d = STATE / pr
         d.mkdir(parents=True, exist_ok=True)
         touch_user(pr, user)
-        cur = (d / "status").read_text().strip() if (d / "status").exists() else ""
-        idle = not cur or cur.startswith(("done", "posted", "dry-run", "failed"))
-        if idle and (force or not cur):
+        # run-review.sh takes a per-PR flock, so a genuine duplicate is impossible — only skip
+        # when a review is ACTUALLY running. This lets a finished review be re-run and, crucially,
+        # a stalled one (status stuck at "reviewing" but the process is gone) be recovered; the
+        # old "idle" guard read the stale status and refused, so Re-run appeared to do nothing.
+        if not is_running(pr):
             (d / "status").write_text("queued")
             with open(d / "run.log", "ab") as log:
                 subprocess.Popen([str(BIN / "run-review.sh"), pr], stdout=log,
