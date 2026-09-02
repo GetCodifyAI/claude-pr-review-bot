@@ -677,7 +677,7 @@ CSS = """
 --mono:ui-monospace,'SF Mono',SFMono-Regular,Menlo,monospace}
 html{-webkit-text-size-adjust:100%}
 body{font:15px/1.65 var(--font);background:var(--bg);color:var(--fg);margin:0;
-padding:0 0 40px;letter-spacing:-.006em;
+padding:0;letter-spacing:-.006em;
 background-image:radial-gradient(900px 380px at 50% -160px,rgba(91,124,250,.10),transparent 70%)}
 ::selection{background:rgba(168,85,247,.32)}
 a{color:var(--blue);text-decoration:none}a:hover{color:#8aa2ff}
@@ -733,8 +733,12 @@ box-shadow:var(--shadow);transition:transform .15s,border-color .15s;display:blo
 .empty b{color:var(--fg);display:block;font-weight:600;margin-bottom:3px}
 .wrap{max-width:64rem;margin:0 auto;padding:30px 20px 0;animation:rise .5s cubic-bezier(.2,.7,.2,1) both}
 .crumb{font-size:.87rem;margin:0 0 14px}
+.bc{display:flex;align-items:center;gap:9px;font-size:.85rem;margin:0 0 14px;font-weight:500}
+.bc a{color:var(--dim)}.bc a:hover{color:var(--fg)}
+.bc .sep{color:var(--line)}.bc .cur{color:var(--fg);font-family:var(--mono);font-size:.82rem}
+.prtitle{margin:0 0 12px;line-height:1.22}
 .meta{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:.87rem;
-color:var(--dim);margin:0 0 4px}
+color:var(--dim);margin:0 0 6px}
 code{background:var(--panel2);border:1px solid var(--line2);padding:1px 6px;border-radius:6px;
 font-size:.85em;font-family:var(--mono)}
 pre{background:#0b0d15;border:1px solid var(--line2);border-radius:11px;padding:14px 16px;
@@ -805,19 +809,22 @@ transition:border-color .18s,box-shadow .18s}
 color:var(--fg);border:1px solid transparent;padding:10px 17px;border-radius:11px;font-size:.9rem;
 cursor:pointer;font-weight:600;font-family:inherit;letter-spacing:-.01em;
 transition:transform .15s cubic-bezier(.2,.7,.2,1),background .15s,border-color .15s,box-shadow .15s}
-.btn:hover{background:#212536;transform:translateY(-1px)}
+.btn:hover{background:#2a3145;transform:translateY(-1px)}
 .btn:active{transform:translateY(0)}
-.btn.primary{background:var(--grad);border-color:transparent;color:#fff;background-size:140% 140%;
-box-shadow:0 6px 18px -6px rgba(168,85,247,.55)}
-.btn.primary:hover{background-position:100% 0;box-shadow:0 10px 26px -8px rgba(168,85,247,.7);
-transform:translateY(-1px)}
-.btn.warn{background:linear-gradient(135deg,#f0506a,#ec4899);border-color:transparent;color:#fff;
-box-shadow:0 6px 18px -8px rgba(236,72,153,.55)}
+.btn.primary{background:var(--grad);border-color:transparent;color:#fff;background-size:140% 140%}
+.btn.primary:hover{background-position:100% 0;transform:translateY(-1px)}
+.btn.warn{background:linear-gradient(135deg,#f0506a,#ec4899);border-color:transparent;color:#fff}
 .btn.warn:hover{filter:brightness(1.06)}
 .btn.ghost{background:transparent;border-color:transparent;color:var(--dim)}
 .btn.ghost:hover{background:var(--panel2);color:var(--fg)}
 .btn.sm{padding:7px 13px;font-size:.82rem;border-radius:9px}
 .btn:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none}
+.btn.soft{background:#242b3e}.btn.soft:hover{background:#2a3145}
+/* no focus outline on clickable chrome — the hover/active states already read; inputs keep
+   their focus ring (defined on .in / textarea) */
+a:focus,button:focus,summary:focus,.btn:focus,.tab:focus,.stat:focus,.sortopt:focus,
+.ni:focus,.row a:focus,.rowact:focus,.peek:focus{outline:none}
+:focus-visible{outline:2px solid rgba(168,85,247,.6);outline-offset:2px}
 .spin{width:13px;height:13px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;
 border-radius:50%;display:inline-block;animation:spin .6s linear infinite}
 /* post-selected action bar — inline at the end of the findings form (not fixed, so it never
@@ -929,7 +936,8 @@ text-transform:uppercase;padding:3px 9px;border-radius:999px}
 .sidefoot .live.dry{background:var(--warnbg);color:#f6cd8a;border:1px solid var(--warnln)}
 .sidefoot .so{color:var(--dim);font-size:.86rem}.sidefoot .so:hover{color:var(--fg)}
 .main{flex:1;min-width:0}
-.main .wrap{padding:34px 36px 0;max-width:58rem;margin:0}
+.main .wrap{padding:34px 36px 56px;max-width:58rem;margin:0}
+.side{overflow-y:auto}
 @media(max-width:820px){.app{flex-direction:column}.app::before{position:sticky}
 .side{width:auto;height:auto;flex-direction:row;align-items:center;padding:9px 14px;gap:8px;z-index:30;
 background:rgba(10,11,18,.85);backdrop-filter:saturate(140%) blur(14px)}
@@ -1691,8 +1699,7 @@ class Handler(BaseHTTPRequestHandler):
                 + fstep(3, "You decide what's worth saying",
                         "The findings appear as editable cards, each with a severity and a "
                         "<code>file:line</code>. Tick the ones you agree with, edit any wording, "
-                        "ignore the rest.",
-                        "Screenshot: the findings list with checkboxes")
+                        "ignore the rest.")
                 + fstep(4, "Post — as you",
                         "The selected comments post to the PR as inline review comments under "
                         "your own GitHub name. Always a plain COMMENT review — Robin never "
@@ -2039,8 +2046,9 @@ class Handler(BaseHTTPRequestHandler):
                        + (f"<code>{html.escape(who)}</code>'s Claude account"
                           if who and who != "shared" else "the shared team runner")
                        + ".</p>")
-        head = (f"<p class=crumb><a href='{link('', '')}'>← queue</a></p>"
-                f"<h1>#{pr} — {html.escape(title)}</h1>"
+        head = (f"<nav class=bc><a href='{link('', '')}'>Queue</a><span class=sep>/</span>"
+                f"<span class=cur>#{pr}</span></nav>"
+                f"<h1 class=prtitle>#{pr} — {html.escape(title)}</h1>"
                 f"<div class=meta>{pill(st)}"
                 + (pill("dry", "dry run") if DRY_RUN else "")
                 + f"<span>{html.escape(meta.get('author', ''))}{size}</span>"
