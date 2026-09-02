@@ -22,20 +22,16 @@ Routes
   POST /prbot/post                     post the selected (possibly edited) comments as you
   POST /prbot/approve                  approve as you
 """
+import base64
 import calendar
 import fcntl
 import hmac
 import html
 import json
 import os
-import pty
 import re
-import select
-import signal
-import struct
+import secrets
 import subprocess
-import tempfile
-import termios
 import threading
 import time
 from hashlib import sha256
@@ -43,6 +39,7 @@ from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlencode, urlparse
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 import prbot_diff
@@ -260,10 +257,14 @@ def oauth_fresh_token(login, u):
 # billed to their own plan. Verified on the box: the env var wins over the stored login (a bogus
 # token 401s instead of silently falling back). No token = the shared runner, as before.
 def user_claude_token(login):
+    """The user's Claude access token, refreshed if it is within a minute of expiring."""
     u = load_users().get(login) or {}
     if not u.get("claude_token_enc"):
         return ""
     try:
+        exp = int(u.get("claude_exp") or 0)
+        if exp and exp - 60 <= time.time():
+            return claude_refresh(login, u)          # expired: refresh (returns "" if it can't)
         return dec(u["claude_token_enc"])
     except RuntimeError:
         return ""
@@ -286,60 +287,36 @@ def verify_claude_token(tok):
     return True, ""
 
 
-# --- "Connect Claude" without a terminal --------------------------------------------------------
-# Runs the GENUINE `claude setup-token` on this box inside a pty, with an isolated config dir
-# so it can neither read nor touch the owner's login, and swaps its terminal prompt for a web
-# form: we show the authorize URL it prints, the person signs in on claude.com with their own
-# account, claude.com shows a code (the CLI's localhost callback is unreachable from their
-# browser, so it uses the paste-a-code variant), they paste it here, we hand it to the CLI,
-# the CLI prints the token. The OAuth client is Claude Code itself — nothing here imitates it —
-# and the token is only ever consumed by Claude Code (`claude -p`), which is what setup-token
-# is for. Probed on the box: URL arrives as an OSC 8 hyperlink; a bad code prints
-# "OAuth error: Invalid code … Press Enter to retry."
-CLAUDE_PENDING = {}                # login -> {pid, fd, url, started, cfg}
+# --- "Connect Claude": direct OAuth (PKCE), the way nerve and Claude Code itself do it ---------
+# The earlier approach drove `claude setup-token` in a pty and scraped its terminal; that fails
+# because the CLI renders the token masked, so it never appears as plaintext to read. So we run
+# the same OAuth 2.0 + PKCE exchange Claude Code performs: send the user to Claude's authorize
+# page, they paste back the code Claude shows, we exchange it for an access+refresh token and
+# store it encrypted. The OAuth client is Claude Code's own (this is the credential
+# CLAUDE_CODE_OAUTH_TOKEN is meant to hold) and the token is only ever used to run `claude -p`;
+# verify_claude_token makes one real call before we keep it, so a token the CLI would reject is
+# caught at connect time. Authorize/redirect/scope captured from the live `claude setup-token`
+# on this box; token endpoint per public Claude Code OAuth notes (api.anthropic.com mirrors
+# console.anthropic.com without its Cloudflare challenge, which a server cannot clear).
+CLAUDE_OAUTH_CLIENT = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+CLAUDE_OAUTH_AUTHORIZE = "https://claude.com/cai/oauth/authorize"
+CLAUDE_OAUTH_REDIRECT = "https://platform.claude.com/oauth/code/callback"
+CLAUDE_OAUTH_SCOPE = "org:create_api_key user:profile user:inference"
+CLAUDE_TOKEN_ENDPOINTS = ["https://api.anthropic.com/v1/oauth/token",
+                          "https://console.anthropic.com/v1/oauth/token",
+                          "https://platform.claude.com/v1/oauth/token"]
+CLAUDE_PENDING = {}                # login -> {verifier, state, started}
 CLAUDE_LOCK = threading.Lock()
-CLAUDE_PENDING_TTL = 10 * 60
-TOKEN_RE = re.compile(r"sk-ant-oat01-[A-Za-z0-9_-]{20,}")
+CLAUDE_PENDING_TTL = 15 * 60
 
 
-def _pty_read(fd, secs, stop=None):
-    out, t0 = b"", time.time()
-    while time.time() - t0 < secs:
-        r, _, _ = select.select([fd], [], [], 0.3)
-        if not r:
-            continue
-        try:
-            chunk = os.read(fd, 4096)
-        except OSError:
-            break
-        if not chunk:
-            break
-        out += chunk
-        if stop and stop(out):
-            break
-    return out
-
-
-def _pty_clean(b):
-    t = re.sub(r"\x1b\][^\x07\x1b]*(\x07|\x1b\\)|\x1b\[[0-9;?]*[A-Za-z]", "",
-                 b.decode("utf-8", "replace"))
-    return re.sub(r"\s+", " ", t).strip()
-
-
-def _claude_kill(p):
-    for f in (lambda: os.kill(p["pid"], signal.SIGKILL), lambda: os.waitpid(p["pid"], 0),
-              lambda: os.close(p["fd"]), lambda: subprocess.run(["rm", "-rf", p["cfg"]])):
-        try:
-            f()
-        except (OSError, ChildProcessError):
-            pass
+def _b64url(raw):
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
 
 
 def claude_connect_cancel(login):
     with CLAUDE_LOCK:
-        p = CLAUDE_PENDING.pop(login, None)
-    if p:
-        _claude_kill(p)
+        CLAUDE_PENDING.pop(login, None)
 
 
 def claude_connect_pending(login):
@@ -348,80 +325,111 @@ def claude_connect_pending(login):
         for k, v in list(CLAUDE_PENDING.items()):
             if time.time() - v["started"] > CLAUDE_PENDING_TTL:
                 CLAUDE_PENDING.pop(k)
-                _claude_kill(v)
         return CLAUDE_PENDING.get(login)
 
 
 def claude_connect_start(login):
-    """(url, error). Spawns setup-token and returns the authorize URL it prints."""
-    claude_connect_cancel(login)
-    (ROOT / "tmp").mkdir(exist_ok=True)
-    cfg = tempfile.mkdtemp(prefix="claude-connect-", dir=ROOT / "tmp")
-    pid, fd = pty.fork()
-    if pid == 0:                                    # child: isolated, no browser, no token
-        os.environ.update(CLAUDE_CONFIG_DIR=cfg, HOME=cfg, BROWSER="true", TERM="xterm",
-                          COLUMNS="220", LINES="60")
-        os.environ.pop("CLAUDE_CODE_OAUTH_TOKEN", None)
-        try:
-            os.execvp("claude", ["claude", "setup-token"])
-        finally:
-            os._exit(127)
-    # A wide terminal keeps the token on one line — at 80 cols it wraps and the regex, which
-    # stops at whitespace, only ever sees a truncated prefix.
-    try:
-        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 60, 220, 0, 0))
-    except OSError:
-        pass
-    # Stop the moment the hyperlink is complete — terminated by either OSC terminator.
-    url_re = re.compile(rb"\x1b\]8;[^;]*;(https://[^\x1b\x07]+)[\x1b\x07]")
-    out = _pty_read(fd, 30, lambda o: bool(url_re.search(o)))
-    m = url_re.search(out)
-    if not m:
-        _claude_kill({"pid": pid, "fd": fd, "cfg": cfg})
-        tail = _pty_clean(out)[-200:] or "claude printed nothing"
-        return None, f"Could not start the Claude sign-in: {tail}"
+    """(url, error). Generates PKCE + state and returns Claude's authorize URL."""
+    verifier = _b64url(secrets.token_bytes(32))
+    challenge = _b64url(sha256(verifier.encode()).digest())
+    state = _b64url(secrets.token_bytes(32))
+    url = CLAUDE_OAUTH_AUTHORIZE + "?" + urlencode({
+        "code": "true", "response_type": "code", "client_id": CLAUDE_OAUTH_CLIENT,
+        "redirect_uri": CLAUDE_OAUTH_REDIRECT, "scope": CLAUDE_OAUTH_SCOPE,
+        "code_challenge": challenge, "code_challenge_method": "S256", "state": state})
     with CLAUDE_LOCK:
-        CLAUDE_PENDING[login] = {"pid": pid, "fd": fd, "url": m.group(1).decode(),
-                                 "started": time.time(), "cfg": cfg}
-    return CLAUDE_PENDING[login]["url"], None
+        CLAUDE_PENDING[login] = {"verifier": verifier, "state": state, "url": url,
+                                 "started": time.time()}
+    return url, None
 
 
-def claude_connect_code(login, code):
-    """(token, error). Feeds the pasted code to the waiting CLI and reads back the token.
+def _token_exchange(payload):
+    """(data, error). POST to the token endpoint, trying each host until one answers JSON.
 
-    The CLI may print a confirmation ("Login successful — Press Enter to continue") before the
-    token, so we nudge Enter whenever it looks like it is waiting, and keep reading up to ~90s.
-    On give-up we return the actual screen text, because a silent timeout is impossible to
-    debug from the outside.
-    """
+    A JSON error body (bad/expired code) means the endpoint worked and the grant is the
+    problem — return it, don't try the next host. An HTML/challenge body means the wrong or a
+    blocked host — move on."""
+    body = json.dumps(payload).encode()
+    last = "no token endpoint answered"
+    for host in CLAUDE_TOKEN_ENDPOINTS:
+        req = Request(host, data=body, method="POST",
+                      headers={"Content-Type": "application/json", "User-Agent": "anthropic",
+                               "Accept": "application/json"})
+        try:
+            with urlopen(req, timeout=20) as r:
+                return json.loads(r.read().decode() or "{}"), None
+        except HTTPError as e:
+            raw = e.read().decode("utf-8", "replace")
+            if raw.strip().startswith("{"):
+                try:
+                    j = json.loads(raw)
+                    return None, (j.get("error_description") or j.get("error") or raw[:200])
+                except ValueError:
+                    return None, raw[:200]
+            last = f"{e.code} from {host.split('/')[2]}"
+        except (OSError, ValueError) as e:
+            last = str(e)[:150]
+    return None, last
+
+
+def claude_connect_code(login, pasted):
+    """(data, error). Exchanges the pasted code for a token response.
+
+    Claude concatenates the code and state with '#'; accept "code#state", a bare code, or the
+    whole redirect URL pasted from the address bar."""
     p = claude_connect_pending(login)
     if not p:
         return None, "That sign-in attempt expired — start again."
-    os.write(p["fd"], code.strip().encode() + b"\r")
-    acc, deadline, nudged = b"", time.time() + 90, 0.0
-    while time.time() < deadline:
-        acc += _pty_read(p["fd"], 3)
-        txt = _pty_clean(acc)
-        m = TOKEN_RE.search(txt)
-        if m:
-            claude_connect_cancel(login)
-            return m.group(0), None
-        low = txt.lower()
-        if "oauth error" in low or "invalid code" in low:
-            os.write(p["fd"], b"\r")                # dismiss "Press Enter to retry"
-            _pty_read(p["fd"], 2)
-            why = re.sub(r".*?(oauth error:|invalid code)\s*", "", txt,
-                         flags=re.I | re.S).split("Press Enter")[0].strip()
-            return None, (why[:200] or "Claude rejected that code.")
-        # Waiting at a "press enter / continue" step, or just idle — give it a gentle nudge,
-        # at most every 6s so we do not spam newlines into the token field.
-        if time.time() - nudged > 6 and ("enter" in low or "continue" in low
-                                         or acc.endswith(b"> ") or acc.endswith(b">")):
-            os.write(p["fd"], b"\r")
-            nudged = time.time()
-    screen = _pty_clean(acc)[-260:]
-    return None, ("Claude did not finish in time. It last showed: "
-                  + (screen or "(nothing)") + " — start over and try again.")
+    val = pasted.strip()
+    if val.startswith("http"):
+        q = parse_qs(urlparse(val).query)
+        val = (q.get("code") or [""])[0] + ("#" + q["state"][0] if q.get("state") else "")
+    code, _, state = val.partition("#")
+    if not code:
+        return None, "That does not look like a code — copy the code Claude showed you."
+    if state and state != p["state"]:
+        return None, "That code is from a different sign-in — start over and use the newest link."
+    data, err = _token_exchange({
+        "grant_type": "authorization_code", "code": code, "code_verifier": p["verifier"],
+        "client_id": CLAUDE_OAUTH_CLIENT, "redirect_uri": CLAUDE_OAUTH_REDIRECT,
+        "state": state or p["state"]})
+    if err:
+        return None, err
+    if not data.get("access_token"):
+        return None, "Claude returned no access token — start over."
+    claude_connect_cancel(login)
+    return data, None
+
+
+def claude_refresh(login, u):
+    """Refresh a stored Claude token in place. Returns the fresh access token, or ''."""
+    if not u.get("claude_refresh_enc"):
+        return ""
+    try:
+        rt = dec(u["claude_refresh_enc"])
+    except RuntimeError:
+        return ""
+    data, err = _token_exchange({"grant_type": "refresh_token",
+                                 "client_id": CLAUDE_OAUTH_CLIENT, "refresh_token": rt})
+    if err or not data.get("access_token"):
+        return ""
+    store_claude_token(login, data)
+    return data["access_token"]
+
+
+def store_claude_token(login, data):
+    """Persist an access(+refresh) token response, encrypted, with an absolute expiry."""
+    now = int(time.time())
+    users = load_users()
+    u = users.get(login) or {}
+    u["claude_token_enc"] = enc(data["access_token"])
+    u["claude_exp"] = now + int(data["expires_in"]) if data.get("expires_in") else 0
+    u["claude_added"] = u.get("claude_added") or now
+    u["updated"] = now
+    if data.get("refresh_token"):
+        u["claude_refresh_enc"] = enc(data["refresh_token"])
+    users[login] = u
+    save_users(users)
 
 
 def review_env(login):
@@ -1421,7 +1429,7 @@ class Handler(BaseHTTPRequestHandler):
                 "<button class='btn primary sm' type=submit form=claudecode "
                 "data-busy='Connecting…'>Connect</button>"
                 "<button class='btn ghost sm' type=submit form=claudecancel>Cancel</button>"
-                "</div><div class=hint>This attempt stays open for 10 minutes.</div></li></ol>",
+                "</div><div class=hint>This attempt stays open for 15 minutes.</div></li></ol>",
                 f"<form id=claudecode method=post action='/prbot/claude/code'>{hidden}</form>"
                 f"<form id=claudecancel method=post action='/prbot/claude/cancel'>{hidden}</form>")
         return (
@@ -1458,19 +1466,15 @@ class Handler(BaseHTTPRequestHandler):
         if not code:
             return back("<div class='banner warn'><span>⚠️</span><div>Paste the code Claude "
                         "showed you.</div></div>")
-        tok, err = claude_connect_code(user, code)
+        result, err = claude_connect_code(user, code)
         if err:
             return back(f"<div class='banner err'><span>🚫</span><div>{html.escape(err)}"
                         f"</div></div>")
-        ok, why = verify_claude_token(tok)
+        ok, why = verify_claude_token(result["access_token"])
         if not ok:
             return back(f"<div class='banner err'><span>🚫</span><div>Got a token from Claude "
                         f"but it did not work here: <code>{html.escape(why)}</code></div></div>")
-        users = load_users()
-        u = users.get(user) or {}
-        u["claude_token_enc"], u["claude_added"], u["updated"] = enc(tok), int(time.time()), int(time.time())
-        users[user] = u
-        save_users(users)
+        store_claude_token(user, result)
         print(f"claude connected: {user}", flush=True)
         if welcome and u.get("slack_id"):
             return self.redirect(nxt if nxt.startswith("/prbot/") else "/prbot/")
