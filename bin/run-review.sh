@@ -63,6 +63,11 @@ status "reviewing"
 echo "${PRBOT_RUN_AS:-shared}" > "$DIR/runner"
 echo "[#$PR] running on: ${PRBOT_RUN_AS:-shared}"
 rm -f "$wt/review.json"
+# Learnings: findings reviewers have dropped as noise or reworded on this repo, so the agent
+# stops re-raising rejected ones. Empty on a fresh box. Rendered by prbot_learn.py (beside us).
+HERE="$(cd "$(dirname "$0")" && pwd)"
+LEARN=$(PYTHONPATH="$HERE" ROOT="$ROOT" python3 -c \
+  'import prbot_learn,sys;sys.stdout.write(prbot_learn.render())' 2>/dev/null)
 (cd "$wt" && timeout 25m claude -p "Use the pr-review skill to review PR #$PR of $REPO.
 
 Follow Step 7 (automation mode): do NOT print the bottom table, do NOT post anything to
@@ -73,7 +78,7 @@ severity, body and reply_to.
 A human reads explainer and analysis in a dashboard to decide whether to trust the findings,
 then selects, edits and posts individual comments. So: write that prose for a person, set
 reply_to honestly from your Step 1 catalog of existing threads, and keep findings few and
-high-confidence." \
+high-confidence.${LEARN}" \
   --allowedTools "Bash Read Glob Grep Write" < /dev/null) >"$DIR/agent.log" 2>&1
 
 [ -s "$wt/review.json" ] || fail "agent produced no review.json (see $DIR/agent.log)"

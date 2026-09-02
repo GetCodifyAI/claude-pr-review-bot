@@ -44,6 +44,7 @@ from urllib.request import Request, urlopen
 
 import prbot_assets
 import prbot_diff
+import prbot_learn
 import prbot_md
 
 BRAND = "Robin"                    # product name shown beside the logo (see prbot_assets)
@@ -1015,11 +1016,15 @@ NAV_ICONS = {
     "how": "<svg viewBox='0 0 24 24' fill=none stroke=currentColor stroke-width=1.8 "
            "stroke-linecap=round stroke-linejoin=round><circle cx='12' cy='12' r='9'/>"
            "<path d='M9.6 9.2a2.5 2.5 0 1 1 3.4 2.3c-.8.5-1 .9-1 1.7M12 17h.01'/></svg>",
+    "learnings": "<svg viewBox='0 0 24 24' fill=none stroke=currentColor stroke-width=1.8 "
+                 "stroke-linecap=round stroke-linejoin=round><path d='M12 3l2.1 4.5L19 8.2l-3.5"
+                 " 3.3.9 4.9L12 14.1 7.6 16.4l.9-4.9L5 8.2l4.9-.7z'/></svg>",
 }
 
 
 def sidebar(user, active):
     items = [("queue", "Queue", "/prbot/"),
+             ("learnings", "Learnings", "/prbot/learnings"),
              ("integrations", "Integrations", "/prbot/integrations"),
              ("how", "How it works", "/prbot/how")]
     nav = "".join(
@@ -1374,6 +1379,8 @@ class Handler(BaseHTTPRequestHandler):
                                       nxt=(q.get("next") or ["/prbot/"])[0])
         if route == "/how":
             return self.how_page(user)
+        if route == "/learnings":
+            return self.learnings_page(user)
         if route == "/":
             tab = (q.get("tab") or ["todo"])[0]
             srt = (q.get("sort") or ["newest"])[0]
@@ -1713,6 +1720,46 @@ class Handler(BaseHTTPRequestHandler):
                 + "<p class=fine>Questions or something not working? Ping "
                   f"<code>{html.escape(REVIEWER)}</code>.</p>")
         return self.reply(200, shell("How it works", body, user=user, active="how"))
+
+    def learnings_page(self, user):
+        c = prbot_learn.counts()
+        rows = prbot_learn.recent(80)
+        strip = ("<div class=stats>"
+                 f"<a class='stat hot'><div class=k>{c['dropped']}</div>"
+                 "<div class=l>Dropped as noise</div></a>"
+                 f"<a class=stat><div class=k>{c['edited']}</div><div class=l>Reworded</div></a>"
+                 f"<a class=stat><div class=k>{c['kept']}</div>"
+                 "<div class=l>Kept as-is</div></a></div>")
+        body = (f"<h1>What {html.escape(BRAND)} has learned</h1>"
+                "<p class=lead>Every time you drop a finding as noise or reword one before "
+                "posting, Robin remembers it and weighs it on the next review of this repo — "
+                "so it stops repeating what you reject. This is that memory.</p>" + strip)
+        if not rows:
+            body += ("<div class=empty><span class=ic>🧠</span><b>Nothing learned yet</b>"
+                     "Post or drop a few findings and they'll show up here.</div>")
+            return self.reply(200, shell("Learnings", body, user=user, active="learnings"))
+
+        pillmap = {"dropped": ("blocker", "dropped"), "edited": ("should-fix", "reworded"),
+                   "kept": ("posted", "kept")}
+        items = []
+        for r in rows:
+            pk, plabel = pillmap.get(r.get("outcome"), ("archived", r.get("outcome", "")))
+            loc = html.escape(r.get("path", "") + (f":{r['line']}" if r.get("line") else ""))
+            extra = ""
+            if r.get("outcome") == "edited" and r.get("edited_gist"):
+                extra = (f"<div class='muted sm' style='margin-top:4px'>→ "
+                         f"{html.escape(r['edited_gist'])}</div>")
+            items.append(
+                f"<div class=row><div class=rowlink>"
+                f"<div class=rowtop>{pill(pk, plabel)}"
+                f"<span class=loc>{loc}</span>{pill(r.get('severity', 'nit'))}</div>"
+                f"<div class='muted sm' style='margin-top:5px'>{html.escape(r.get('gist', ''))}"
+                f"</div>{extra}</div></div>")
+        body += ("<h2>Recent decisions</h2><div class=list>" + "".join(items) + "</div>"
+                 "<p class=fine>Shared across the team for this repo. These are preferences, "
+                 "not hard rules — Robin still raises a genuine higher-severity issue even if "
+                 "it resembles a past drop.</p>")
+        return self.reply(200, shell("Learnings", body, user=user, active="learnings"))
 
     def claude_section(self, user, u, exp, sig, welcome, nxt):
         """(inner, aux): the Claude block for inside the settings <form>, plus the auxiliary
@@ -2224,6 +2271,13 @@ class Handler(BaseHTTPRequestHandler):
                            "line": int(line) if line.isdigit() else None,
                            "severity": one(f"sev_{i}"),
                            "body": one(f"body_{i}").strip()})
+        # Learnings: capture what was dropped/edited/kept before posting — the same signal the
+        # dashboard used to discard. Sorted like review_body so form index i lines up. Done
+        # even when nothing is chosen (dropping every finding is the strongest signal), and
+        # before the dry-run branch so it learns during the pilot too.
+        originals = sorted(rev.get("comments", []),
+                           key=lambda c: SEV_ORDER.get(c.get("severity"), 9))
+        prbot_learn.record(pr, user, originals, form)
         if not chosen:
             return self.detail_page(pr, user, "<div class='banner warn'><span>⚠️</span><div>"
                                               "Nothing selected — nothing sent.</div></div>")
