@@ -95,7 +95,7 @@ jq -c '.[]' "$ROOT/queue.json" | while read -r pr; do
        style:"primary", url:$l},
       {type:"button", text:{type:"plain_text", text:"Dashboard"}, url:$b},
       {type:"button", text:{type:"plain_text", text:"Open PR"}, url:$u}]}]}' \
-  | slack_post
+  | slack_post "$num" root
 
   for login in $new; do echo "$num:$login" >> "$SEEN"; done
 done

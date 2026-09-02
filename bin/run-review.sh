@@ -22,7 +22,7 @@ fail() { status "failed: $1"; notify_fail "$1"; exit 1; }
 notify_fail() {
   jq -n --arg p "$PR" --arg m "$1" --arg u "https://github.com/$REPO/pull/$PR" '
     {blocks:[{type:"section",text:{type:"mrkdwn",
-      text:("⚠️ Review of *<" + $u + "|#" + $p + ">* failed: " + $m)}}]}' | slack_post
+      text:("⚠️ Review of *<" + $u + "|#" + $p + ">* failed: " + $m)}}]}' | slack_post "$PR" reply
 }
 
 have_free_mem || fail "not enough free memory to start a review"
@@ -118,4 +118,4 @@ jq -n --arg t "$title" --arg u "$url" --arg p "$PR" --arg s "$summary" --arg e "
      style:"primary", url:$l},
     {type:"button", text:{type:"plain_text", text:"Open PR"}, url:$u}]},
   {type:"context", elements:[{type:"mrkdwn",
-    text:"Nothing posted yet — select, edit and post from the dashboard."}]}]}' | slack_post
+    text:"Nothing posted yet — select, edit and post from the dashboard."}]}]}' | slack_post "$PR" reply

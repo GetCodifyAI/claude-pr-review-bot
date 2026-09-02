@@ -51,6 +51,10 @@ ask() {
 }
 ensure_key GITHUB_PAT ""
 ensure_key SLACK_WEBHOOK ""
+# Optional: a Slack bot token + channel enable threaded replies (review-ready threads under the
+# review-request card). Without them, Slack falls back to the webhook (a fresh message each time).
+ensure_key SLACK_BOT_TOKEN ""
+ensure_key SLACK_CHANNEL ""
 ensure_key REPO "$REPO"
 # Your GitHub login. The PAT must belong to this account — everything the dashboard posts is
 # attributed to it, which is the whole point of the design.

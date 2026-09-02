@@ -83,11 +83,34 @@ dashboard_link() {
 }
 
 # --- slack -----------------------------------------------------------------------------------
-# Incoming webhooks are send-only and do not return a message ts, so replies cannot
-# be threaded. Each update is a fresh message that names the PR for correlation.
+# slack_post [pr] [root|reply]   (blocks JSON on stdin)
+#
+# With SLACK_BOT_TOKEN + SLACK_CHANNEL set, posts via chat.postMessage — which DOES return a
+# message ts, so the review-ready update threads under the review-request card: a "root" post
+# stores its ts in STATE/<pr>/slack_ts; a "reply" post sends thread_ts from that file. Without a
+# bot token it falls back to the incoming webhook (send-only — a fresh message, no threading).
 slack_post() {
+  local pr="${1:-}" mode="${2:-}" payload; payload=$(cat)
+  if [ -n "${SLACK_BOT_TOKEN:-}" ] && [ -n "${SLACK_CHANNEL:-}" ]; then
+    local ts_file="" thread="" body resp
+    [ -n "$pr" ] && ts_file="$STATE/$pr/slack_ts"
+    [ "$mode" = reply ] && [ -f "$ts_file" ] && thread=$(cat "$ts_file")
+    body=$(echo "$payload" | jq --arg ch "$SLACK_CHANNEL" --arg th "$thread" \
+      '. + {channel:$ch, text:"Robin PR review"} + (if $th=="" then {} else {thread_ts:$th} end)')
+    resp=$(curl -fsS -X POST -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+      -H 'Content-type: application/json; charset=utf-8' --data "$body" \
+      https://slack.com/api/chat.postMessage 2>/dev/null)
+    if [ "$(echo "$resp" | jq -r '.ok' 2>/dev/null)" = true ]; then
+      if [ "$mode" = root ] && [ -n "$ts_file" ]; then
+        mkdir -p "$(dirname "$ts_file")"; echo "$resp" | jq -r '.ts' > "$ts_file"
+      fi
+    else
+      echo "WARN: slack chat.postMessage failed: $(echo "$resp" | jq -r '.error // "?"')" >&2
+    fi
+    return 0
+  fi
   [ -n "${SLACK_WEBHOOK:-}" ] || { echo "(no SLACK_WEBHOOK; skipping notify)"; return 0; }
-  curl -fsS -X POST -H 'Content-type: application/json' \
+  echo "$payload" | curl -fsS -X POST -H 'Content-type: application/json' \
     --data @- "$SLACK_WEBHOOK" >/dev/null 2>&1 || echo "WARN: slack post failed" >&2
 }
 
