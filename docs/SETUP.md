@@ -200,22 +200,30 @@ within 3 minutes.
 ### Connect your own Claude account (optional, per person)
 
 By default every review runs on the box's shared Claude sign-in — the owner's subscription.
-Anyone can move *their* reviews onto their own account:
+Anyone can move *their* reviews onto their own account from *Settings* → **Connect Claude
+account**:
 
-1. On your laptop: `claude setup-token`. It opens the browser, you sign in with your Claude
-   account, and it prints a long-lived token.
-2. Dashboard → *Settings* → paste it under **Claude** → *Save*. It is verified with one tiny
-   call and stored encrypted, like your GitHub token.
+1. **Open Claude to authorize ↗** — sign in on claude.com with *your* Claude account and click
+   Authorize. Claude shows you a code.
+2. **Paste the code** → *Connect*. Verified with one tiny call, stored encrypted like your
+   GitHub token. Needs a Pro, Max, Team or Enterprise plan.
 
 From then on, reviews **you** click to start run with your token, billed to your plan and
 subject to your plan's limits. Reviews other people start are unaffected; a review is shared
 per PR, so whoever starts it pays for it and everyone requested reads it. The PR page says
 which account it ran on. *Disconnect* in Settings reverts you to the shared runner.
 
-There is no "Sign in with Anthropic" button because Anthropic offers no third-party login;
-`claude setup-token` is the mechanism it documents for handing a subscription to automation
-(it is how the official GitHub Action authenticates). The token is honoured over the box's
-own sign-in — verified: a bad one fails with a `401` rather than silently using the owner's.
+**How this stays inside Anthropic's rules.** Anthropic prohibits Claude-account OAuth in
+third-party applications (server-side enforcement since 01/09/26; policy made explicit
+02/19/26): the "Connect Claude" buttons in unofficial tools that reuse Claude Code's OAuth
+client are exactly what was banned. This dashboard does not do that. It runs the **genuine
+`claude setup-token`** on the box — the command Anthropic documents for CI jobs and scripts
+that wrap Claude Code — inside an isolated config directory, and only replaces its terminal
+prompt with a web form: the authorize link is the one the CLI printed, the code goes to the
+CLI, the CLI mints the token, and the token is only ever used by Claude Code (`claude -p`).
+If you would rather not have the box involved in the sign-in at all, the fallback is the same
+command run on your own laptop and the token pasted in — under *Or paste a token from
+`claude setup-token` instead*.
 
 ### What each person sees
 

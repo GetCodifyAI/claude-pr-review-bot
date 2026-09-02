@@ -28,8 +28,13 @@ import hmac
 import html
 import json
 import os
+import pty
 import re
+import select
+import signal
 import subprocess
+import tempfile
+import threading
 import time
 from hashlib import sha256
 from http.cookies import SimpleCookie
@@ -277,6 +282,120 @@ def verify_claude_token(tok):
         tail = ((r.stderr or r.stdout or "").strip().splitlines() or ["unknown error"])[-1]
         return False, tail[:200]
     return True, ""
+
+
+# --- "Connect Claude" without a terminal --------------------------------------------------------
+# Runs the GENUINE `claude setup-token` on this box inside a pty, with an isolated config dir
+# so it can neither read nor touch the owner's login, and swaps its terminal prompt for a web
+# form: we show the authorize URL it prints, the person signs in on claude.com with their own
+# account, claude.com shows a code (the CLI's localhost callback is unreachable from their
+# browser, so it uses the paste-a-code variant), they paste it here, we hand it to the CLI,
+# the CLI prints the token. The OAuth client is Claude Code itself — nothing here imitates it —
+# and the token is only ever consumed by Claude Code (`claude -p`), which is what setup-token
+# is for. Probed on the box: URL arrives as an OSC 8 hyperlink; a bad code prints
+# "OAuth error: Invalid code … Press Enter to retry."
+CLAUDE_PENDING = {}                # login -> {pid, fd, url, started, cfg}
+CLAUDE_LOCK = threading.Lock()
+CLAUDE_PENDING_TTL = 10 * 60
+TOKEN_RE = re.compile(r"sk-ant-oat01-[A-Za-z0-9_-]{20,}")
+
+
+def _pty_read(fd, secs, stop=None):
+    out, t0 = b"", time.time()
+    while time.time() - t0 < secs:
+        r, _, _ = select.select([fd], [], [], 0.3)
+        if not r:
+            continue
+        try:
+            chunk = os.read(fd, 4096)
+        except OSError:
+            break
+        if not chunk:
+            break
+        out += chunk
+        if stop and stop(out):
+            break
+    return out
+
+
+def _pty_clean(b):
+    t = re.sub(r"\x1b\][^\x07\x1b]*(\x07|\x1b\\)|\x1b\[[0-9;?]*[A-Za-z]", "",
+                 b.decode("utf-8", "replace"))
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def _claude_kill(p):
+    for f in (lambda: os.kill(p["pid"], signal.SIGKILL), lambda: os.waitpid(p["pid"], 0),
+              lambda: os.close(p["fd"]), lambda: subprocess.run(["rm", "-rf", p["cfg"]])):
+        try:
+            f()
+        except (OSError, ChildProcessError):
+            pass
+
+
+def claude_connect_cancel(login):
+    with CLAUDE_LOCK:
+        p = CLAUDE_PENDING.pop(login, None)
+    if p:
+        _claude_kill(p)
+
+
+def claude_connect_pending(login):
+    """The in-flight connect for this user, or None. Reaps anything older than the TTL."""
+    with CLAUDE_LOCK:
+        for k, v in list(CLAUDE_PENDING.items()):
+            if time.time() - v["started"] > CLAUDE_PENDING_TTL:
+                CLAUDE_PENDING.pop(k)
+                _claude_kill(v)
+        return CLAUDE_PENDING.get(login)
+
+
+def claude_connect_start(login):
+    """(url, error). Spawns setup-token and returns the authorize URL it prints."""
+    claude_connect_cancel(login)
+    (ROOT / "tmp").mkdir(exist_ok=True)
+    cfg = tempfile.mkdtemp(prefix="claude-connect-", dir=ROOT / "tmp")
+    pid, fd = pty.fork()
+    if pid == 0:                                    # child: isolated, no browser, no token
+        os.environ.update(CLAUDE_CONFIG_DIR=cfg, HOME=cfg, BROWSER="true", TERM="xterm")
+        os.environ.pop("CLAUDE_CODE_OAUTH_TOKEN", None)
+        try:
+            os.execvp("claude", ["claude", "setup-token"])
+        finally:
+            os._exit(127)
+    # Stop the moment the hyperlink is complete — terminated by either OSC terminator.
+    url_re = re.compile(rb"\x1b\]8;[^;]*;(https://[^\x1b\x07]+)[\x1b\x07]")
+    out = _pty_read(fd, 30, lambda o: bool(url_re.search(o)))
+    m = url_re.search(out)
+    if not m:
+        _claude_kill({"pid": pid, "fd": fd, "cfg": cfg})
+        tail = _pty_clean(out)[-200:] or "claude printed nothing"
+        return None, f"Could not start the Claude sign-in: {tail}"
+    with CLAUDE_LOCK:
+        CLAUDE_PENDING[login] = {"pid": pid, "fd": fd, "url": m.group(1).decode(),
+                                 "started": time.time(), "cfg": cfg}
+    return CLAUDE_PENDING[login]["url"], None
+
+
+def claude_connect_code(login, code):
+    """(token, error). Feeds the pasted code to the waiting CLI and reads back the token."""
+    p = claude_connect_pending(login)
+    if not p:
+        return None, "That sign-in attempt expired — start again."
+    os.write(p["fd"], code.strip().encode() + b"\r")
+    out = _pty_read(p["fd"], 60, lambda o: bool(TOKEN_RE.search(o.decode("utf-8", "replace")))
+                    or b"error" in o.lower())
+    txt = _pty_clean(out)
+    m = TOKEN_RE.search(txt)
+    if m:
+        claude_connect_cancel(login)
+        return m.group(0), None
+    if "error" in txt.lower():
+        os.write(p["fd"], b"\r")                    # "Press Enter to retry" → back to the prompt
+        _pty_read(p["fd"], 2)
+        why = re.sub(r".*?OAuth error:\s*", "", txt, flags=re.S).split("Press Enter")[0].strip()
+        return None, why or "Claude rejected that code."
+    return None, "Claude did not answer in time — paste the code again, or start over."
 
 
 def review_env(login):
@@ -1035,6 +1154,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.to_login()
         if route == "/settings":
             return self.do_settings(user, form)
+        if route in ("/claude/start", "/claude/code", "/claude/cancel"):
+            return self.do_claude_connect(user, route.rsplit("/", 1)[1], form)
         pr, exp, sig = one("pr"), one("exp"), one("sig")
         if not pr.isdigit():
             return self.reply(400, shell("Bad request", "<h1>Missing PR number.</h1>"))
@@ -1195,6 +1316,7 @@ class Handler(BaseHTTPRequestHandler):
                           "Otherwise reviews you start use the shared team runner. Fine to skip.")
                      + "</div>")
 
+        claude_inner, claude_aux = self.claude_section(user, u, exp, sig, welcome, nxt)
         if welcome:
             head = (f"<h1>You're in, {html.escape(u.get('name') or user)}.</h1>"
                     "<p class=lead>Two more things make this work well. The first takes ten "
@@ -1220,21 +1342,7 @@ class Handler(BaseHTTPRequestHandler):
               "</li>"
               # -- claude ------------------------------------------------------------------
               "<li><h5>Claude account <span class='muted sm'>(optional)</span></h5>"
-            + (("<div class=hint ok>✓ Connected "
-                f"{fmt_date(u.get('claude_added', 0))} — reviews you start run on your own "
-                "account.</div>"
-                "<p class=sm style='margin:8px 0 0'><label><input type=checkbox "
-                "name=claude_disconnect> Disconnect and go back to the shared runner</label></p>")
-               if has_claude else
-               ("<div class=hint>On your laptop run <code>claude setup-token</code> — it opens "
-                "your browser, you sign in with your Claude account, and it prints a token. "
-                "Paste it here and reviews <em>you</em> start bill to your plan instead of the "
-                "shared one.</div>"
-                "<div class=field style='margin-top:8px'><input type=password id=ctok "
-                "name=claude_token placeholder='sk-ant-oat01-…' autocomplete=off "
-                "spellcheck=false><button type=button class='btn ghost sm' "
-                "onclick=\"peek('ctok',this)\">show</button></div>"
-                "<div class=hint>Checked with one tiny call before it is saved.</div>"))
+            + claude_inner
             + "</li>"
               # -- github ------------------------------------------------------------------
               "<li><h5>GitHub token <span class='muted sm'>(only to replace it)</span></h5>"
@@ -1254,8 +1362,94 @@ class Handler(BaseHTTPRequestHandler):
               f"<input type=hidden name=next value='{html.escape(nxt)}'>"
               "<p style='margin:18px 0 0'><button class='btn primary' type=submit "
               "data-busy='Saving…'>Save</button> " + done_link + "</p>"
-              "</form></div>")
+              "</form>" + claude_aux + "</div>")
         return self.reply(200, shell("Welcome" if welcome else "Settings", body))
+
+    def claude_section(self, user, u, exp, sig, welcome, nxt):
+        """(inner, aux): the Claude block for inside the settings <form>, plus the auxiliary
+        <form>s its buttons post to. Nested forms are invalid HTML — browsers drop the inner
+        tag — so the aux forms are emitted AFTER the main form and the buttons reference them
+        by id via the `form=` attribute."""
+        hidden = (f"<input type=hidden name=exp value='{exp}'>"
+                  f"<input type=hidden name=sig value='{sig}'>"
+                  f"<input type=hidden name=welcome value='{'1' if welcome else ''}'>"
+                  f"<input type=hidden name=next value='{html.escape(nxt)}'>")
+        if u.get("claude_token_enc"):
+            return ((f"<div class=hint ok>✓ Connected {fmt_date(u.get('claude_added', 0))} — "
+                     "reviews you start run on your own account.</div>"
+                     "<p class=sm style='margin:8px 0 0'><label><input type=checkbox "
+                     "name=claude_disconnect> Disconnect and go back to the shared runner"
+                     "</label></p>"), "")
+        pend = claude_connect_pending(user)
+        if pend:
+            return (
+                "<div class=hint>Two steps, then you're done:</div>"
+                "<ol class=steps style='margin-top:10px'>"
+                f"<li><h5>Sign in on Claude</h5><p style='margin:0'><a class='btn primary' "
+                f"target=_blank rel=noopener href='{html.escape(pend['url'])}'>Open Claude to "
+                "authorize ↗</a></p><div class=hint>Sign in with <em>your</em> Claude account "
+                "and click <b>Authorize</b>. Claude then shows you a code.</div></li>"
+                "<li><h5>Paste the code</h5>"
+                "<div class=field><input type=text name=code form=claudecode "
+                "placeholder='paste the code from Claude' autocomplete=off spellcheck=false>"
+                "<button class='btn primary sm' type=submit form=claudecode "
+                "data-busy='Connecting…'>Connect</button>"
+                "<button class='btn ghost sm' type=submit form=claudecancel>Cancel</button>"
+                "</div><div class=hint>This attempt stays open for 10 minutes.</div></li></ol>",
+                f"<form id=claudecode method=post action='/prbot/claude/code'>{hidden}</form>"
+                f"<form id=claudecancel method=post action='/prbot/claude/cancel'>{hidden}</form>")
+        return (
+            "<div class=hint>Reviews you start currently run on the <b>shared team runner</b>. "
+            "Connect your own Claude account and they bill to your plan instead — "
+            "sign in on Claude, paste back a code, done.</div>"
+            "<p style='margin:10px 0 0'><button class=btn type=submit form=claudestart "
+            "data-busy='Starting…'>Connect Claude account</button></p>"
+            "<details style='margin-top:10px'><summary class=sm><span>Or paste a token from "
+            "<code>claude setup-token</code> instead</span></summary><div class=dbody>"
+            "<div class=field style='margin-top:8px'><input type=password id=ctok "
+            "name=claude_token placeholder='sk-ant-oat01-…' autocomplete=off spellcheck=false>"
+            "<button type=button class='btn ghost sm' onclick=\"peek('ctok',this)\">show"
+            "</button></div><div class=hint>Run it on your laptop; it prints a token. Saved with "
+            "the Save button below, after one tiny check.</div></div></details>",
+            f"<form id=claudestart method=post action='/prbot/claude/start'>{hidden}</form>")
+
+    def do_claude_connect(self, user, step, form):
+        one = lambda k: (form.get(k) or [""])[0]  # noqa: E731
+        if err := verify("settings", user, one("exp"), one("sig")):
+            return self.deny(err)
+        welcome, nxt = bool(one("welcome")), one("next") or "/prbot/"
+        back = lambda banner="": self.settings_page(user, banner, welcome=welcome, nxt=nxt)  # noqa
+        if step == "cancel":
+            claude_connect_cancel(user)
+            return back()
+        if step == "start":
+            url, err = claude_connect_start(user)
+            if err:
+                return back(f"<div class='banner err'><span>🚫</span><div>{html.escape(err)}"
+                            f"</div></div>")
+            return back()
+        code = one("code").strip()
+        if not code:
+            return back("<div class='banner warn'><span>⚠️</span><div>Paste the code Claude "
+                        "showed you.</div></div>")
+        tok, err = claude_connect_code(user, code)
+        if err:
+            return back(f"<div class='banner err'><span>🚫</span><div>{html.escape(err)}"
+                        f"</div></div>")
+        ok, why = verify_claude_token(tok)
+        if not ok:
+            return back(f"<div class='banner err'><span>🚫</span><div>Got a token from Claude "
+                        f"but it did not work here: <code>{html.escape(why)}</code></div></div>")
+        users = load_users()
+        u = users.get(user) or {}
+        u["claude_token_enc"], u["claude_added"], u["updated"] = enc(tok), int(time.time()), int(time.time())
+        users[user] = u
+        save_users(users)
+        print(f"claude connected: {user}", flush=True)
+        if welcome and u.get("slack_id"):
+            return self.redirect(nxt if nxt.startswith("/prbot/") else "/prbot/")
+        return back("<div class='banner ok'><span>✓</span><div>Claude connected — reviews you "
+                    "start now run on your own account.</div></div>")
 
     def do_settings(self, user, form):
         one = lambda k: (form.get(k) or [""])[0]  # noqa: E731
