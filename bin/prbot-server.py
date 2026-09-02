@@ -52,6 +52,23 @@ CLAUDE_ICON = ("<svg viewBox='0 0 24 24' width=18 height=18 fill=currentColor ar
                "<path d='M12 2c.3 3.1 1 4.9 2.2 6 1.1 1.2 2.9 1.9 6 2.2-3.1.3-4.9 1-6 2.2"
                "-1.2 1.1-1.9 2.9-2.2 6-.3-3.1-1-4.9-2.2-6C8.6 11.2 6.8 10.5 3.7 10.2"
                "c3.1-.3 4.9-1 6-2.2C10.9 6.9 11.6 5.1 12 2z'/></svg>")
+GH_ICON = ("<svg viewBox='0 0 16 16' width=23 height=23 fill=currentColor><path d='M8 0C3.58 0 0 "
+           "3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01."
+           "37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 "
+           "1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.8"
+           "7.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 "
+           "0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 "
+           "0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55."
+           "38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z'/></svg>")
+SLACK_ICON = ("<svg viewBox='0 0 122.8 122.8' width=22 height=22>"
+              "<path fill='#E01E5A' d='M25.8 77.6a12.9 12.9 0 1 1-12.9-12.9h12.9zM32.3 77.6a12.9 "
+              "12.9 0 0 1 25.8 0v32.3a12.9 12.9 0 0 1-25.8 0z'/>"
+              "<path fill='#36C5F0' d='M45.2 25.8a12.9 12.9 0 1 1 12.9-12.9v12.9zM45.2 32.3a12.9 "
+              "12.9 0 0 1 0 25.8H12.9a12.9 12.9 0 0 1 0-25.8z'/>"
+              "<path fill='#2EB67D' d='M97 45.2a12.9 12.9 0 1 1 12.9 12.9H97zM90.5 45.2a12.9 12.9 "
+              "0 0 1-25.8 0V12.9a12.9 12.9 0 0 1 25.8 0z'/>"
+              "<path fill='#ECB22E' d='M77.6 97a12.9 12.9 0 1 1-12.9 12.9V97zM77.6 90.5a12.9 12.9 "
+              "0 0 1 0-25.8h32.3a12.9 12.9 0 0 1 0 25.8z'/></svg>")
 
 ROOT = Path(os.environ.get("ROOT", Path.home() / ".claude-pr-bot"))
 BIN = Path(__file__).resolve().parent
@@ -920,14 +937,33 @@ background:rgba(10,11,18,.85);backdrop-filter:saturate(140%) blur(14px)}
 .sidefoot{margin:0 0 0 auto;flex-direction:row;align-items:center;border-top:0;padding:0;gap:10px}
 .sidefoot .nm,.sidefoot .live{display:none}.main .wrap{padding:22px 16px 0}}
 /* integration cards */
-.intg{display:flex;gap:15px;align-items:flex-start;padding:20px 22px;border:1px solid var(--line);
-border-radius:var(--r);background:var(--panel);box-shadow:var(--shadow);margin:14px 0;
+.intg{padding:22px 24px;border:1px solid var(--line);border-radius:16px;margin:16px 0;
+background:linear-gradient(180deg,rgba(255,255,255,.022),transparent 40%),var(--panel);
+box-shadow:0 1px 0 rgba(255,255,255,.03) inset,0 12px 34px -16px rgba(0,0,0,.7);
 animation:rise .5s cubic-bezier(.2,.7,.2,1) both}
-.intg .ico{width:44px;height:44px;border-radius:12px;flex:none;display:flex;align-items:center;
-justify-content:center;background:var(--panel2);border:1px solid var(--line);font-size:1.3rem}
-.intg .bd{flex:1;min-width:0}
-.intg .hd{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.intg h4{margin:0;font-size:1.05rem}
+.intg.ok{border-color:rgba(61,220,151,.22)}
+.itop{display:flex;gap:15px;align-items:flex-start}
+.iico{width:46px;height:46px;border-radius:13px;flex:none;display:flex;align-items:center;
+justify-content:center;box-shadow:0 4px 12px -4px rgba(0,0,0,.6)}
+.iico.gh{background:#161b22;color:#fff;border:1px solid #2b3140}
+.iico.slack{background:#fff}
+.iico.claude{background:linear-gradient(135deg,#d97757,#c15f3c);color:#fff}
+.imeta{flex:1;min-width:0}
+.iname{display:flex;align-items:center;gap:9px;font-weight:650;font-size:1.08rem;letter-spacing:-.01em}
+.idesc{color:var(--dim);font-size:.88rem;margin-top:3px}
+.ictl{margin-top:16px}
+.ictl .hint{margin:9px 0 0}
+/* form controls that read as controls */
+.in{width:100%;background:#0a0c14;border:1px solid var(--line);border-radius:10px;padding:11px 13px;
+font:13.5px/1.4 var(--mono);color:var(--fg);transition:border-color .16s,box-shadow .16s}
+.in:focus{outline:0;border-color:var(--purple);box-shadow:0 0 0 3px rgba(168,85,247,.16)}
+.inrow{display:flex;gap:9px;align-items:stretch}.inrow .in{flex:1;min-width:0}
+.intg .btn{background:#252c40}.intg .btn:hover{background:#2e3650}
+.intg .btn.primary{background:var(--grad);background-size:140% 140%}
+.discbtn{background:none;border:0;color:var(--faint);font-size:.83rem;font-weight:600;cursor:pointer;
+padding:6px 0;margin-top:8px}.discbtn:hover{color:var(--err)}
+.replace{background:none;border:0;color:var(--blue);font-size:.85rem;font-weight:600;cursor:pointer;
+padding:0;margin-top:12px}.replace:hover{color:#8aa2ff}
 .tag-on{font-size:.68rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:3px 9px;
 border-radius:999px;background:var(--okbg);color:#6fe6b2;border:1px solid var(--okln)}
 .tag-off{font-size:.68rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:3px 9px;
@@ -1586,47 +1622,37 @@ class Handler(BaseHTTPRequestHandler):
         off = "<span class=tag-off>Not connected</span>"
         req = "<span class=tag-req>Required</span>"
 
-        def card(icon, name, chip, sub, control):
-            return (f"<div class=intg><div class=ico>{icon}</div><div class=bd>"
-                    f"<div class=hd><h4>{name}</h4>{chip}</div>"
-                    f"<div class=hint style='margin-top:4px'>{sub}</div>{control}</div></div>")
+        def card(icon_cls, icon, name, chip, sub, control, ok=False):
+            return (f"<div class='intg{' ok' if ok else ''}'><div class=itop>"
+                    f"<div class='iico {icon_cls}'>{icon}</div><div class=imeta>"
+                    f"<div class=iname>{name} {chip}</div><div class=idesc>{sub}</div></div></div>"
+                    f"<div class=ictl>{control}</div></div>")
 
-        gh_svg = ("<svg viewBox='0 0 16 16' width=22 height=22 fill=currentColor><path d='M8 0C3."
-                  "58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.0"
-                  "1-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-."
-                  "53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2"
-                  "-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2"
-                  ".2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1"
-                  ".16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.5"
-                  "4 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58"
-                  "-8-8-8z'/></svg>")
-        gh_ctl = ("<details style='margin-top:12px'><summary class=sm>Replace token</summary>"
-                  "<div class=dbody><form method=post action='/prbot/settings'>"
-                  "<div class=tokfield style='margin-top:8px'><input type=password id=gtok "
-                  "name=pat placeholder='ghp_…' autocomplete=off spellcheck=false>"
-                  "<button type=button class=peek onclick=\"peek('gtok',this)\">show</button></div>"
-                  "<div class=hint>Paste a new token to rotate it.</div>" + hidden
-                  + "<button class='btn soft sm block' type=submit data-busy='Saving…' "
-                  "style='margin-top:8px'>Save token</button></form></div></details>")
-        github_card = card(gh_svg, "GitHub", on,
+        gh_ctl = ("<button type=button class=replace onclick=\"this.hidden=true;"
+                  "document.getElementById('gh-rep').hidden=false\">Replace token</button>"
+                  "<div id=gh-rep hidden><form method=post action='/prbot/settings'>"
+                  "<div class=inrow><input type=password class=in name=pat placeholder='ghp_…' "
+                  "autocomplete=off spellcheck=false>"
+                  "<button class='btn primary' type=submit data-busy='Saving…'>Save</button></div>"
+                  + hidden + "</form></div>")
+        github_card = card("gh", GH_ICON, "GitHub", on,
                            f"Connected as <code>{html.escape(user)}</code> — comments and "
-                           "approvals post under your name.", gh_ctl)
+                           "approvals post under your name.", gh_ctl, ok=True)
 
         slack_ctl = ("<form method=post action='/prbot/settings'>"
-                     "<div class=tokfield style='margin-top:10px'><input type=text id=slack_id "
-                     f"name=slack_id placeholder='U0123ABCDEF' "
-                     f"value='{html.escape(u.get('slack_id', ''))}' autocomplete=off "
-                     "spellcheck=false></div><div class=hint id=slackhint></div>"
+                     "<div class=inrow><input type=text class=in id=slack_id name=slack_id "
+                     f"placeholder='U0123ABCDEF' value='{html.escape(u.get('slack_id', ''))}' "
+                     "autocomplete=off spellcheck=false>"
+                     "<button class='btn primary' type=submit data-busy='Saving…'>Save</button>"
+                     "</div><div class=hint id=slackhint></div>"
                      "<div class=hint>In Slack: your <b>profile picture</b> → <b>Profile</b> → "
-                     "the <b>⋮</b> menu → <b>Copy member ID</b>.</div>" + hidden
-                     + "<button class='btn soft sm block' type=submit data-busy='Saving…' "
-                     "style='margin-top:8px'>Save Slack ID</button></form>")
-        slack_card = card("💬", "Slack", on if has_slack else off,
-                          "Pings you when a review is requested.", slack_ctl)
+                     "the <b>⋮</b> menu → <b>Copy member ID</b>.</div>" + hidden + "</form>")
+        slack_card = card("slack", SLACK_ICON, "Slack", on if has_slack else off,
+                          "Pings you when a review is requested.", slack_ctl, ok=has_slack)
 
-        claude_card = card(CLAUDE_ICON, "Claude", on if has_claude else req,
+        claude_card = card("claude", CLAUDE_ICON, "Claude", on if has_claude else req,
                            "Reviews you start run on your own Claude account.",
-                           claude_inner) + claude_aux
+                           claude_inner, ok=has_claude) + claude_aux
 
         cards = github_card + slack_card + claude_card
         if welcome:
@@ -1752,8 +1778,7 @@ class Handler(BaseHTTPRequestHandler):
         if u.get("claude_token_enc"):
             return ((f"<div class=hint ok>✓ Connected {fmt_date(u.get('claude_added', 0))} — "
                      "reviews you start run on your own Claude account.</div>"
-                     "<button class='btn soft sm' type=submit form=claudedisc "
-                     "style='margin-top:10px'>Disconnect</button>"),
+                     "<button class=discbtn type=submit form=claudedisc>Disconnect</button>"),
                     f"<form id=claudedisc method=post action='/prbot/claude/disconnect'>"
                     f"{hidden}</form>")
         # Not connected: mint the authorize URL now so the single "Connect with Claude" button
@@ -1763,7 +1788,6 @@ class Handler(BaseHTTPRequestHandler):
         if err:
             return (f"<div class=hint err>{html.escape(err)}</div>", "")
         reveal = ("document.getElementById('cc-code').hidden=false;"
-                  "this.classList.remove('primary');this.classList.add('soft');"
                   "this.querySelector('.lbl').textContent='Reopen Claude';"
                   "setTimeout(function(){var i=document.getElementById('cc-input');"
                   "if(i)i.focus();},200)")
@@ -1772,11 +1796,11 @@ class Handler(BaseHTTPRequestHandler):
             f"onclick=\"{reveal}\">{CLAUDE_ICON}<span class=lbl>Connect with Claude</span></a>"
             "<div class=hint>Opens Claude in a new tab — sign in with <em>your</em> account and "
             "click <b>Authorize</b>. Claude shows you a code; paste it below.</div>"
-            "<div id=cc-code hidden style='margin-top:12px'>"
-            "<div class=tokfield><input type=text id=cc-input name=code form=claudecode "
-            "placeholder='paste the code from Claude' autocomplete=off spellcheck=false></div>"
-            "<button class='btn primary block' type=submit form=claudecode "
-            "data-busy='Connecting…' style='margin-top:8px'>Connect</button></div>",
+            "<div id=cc-code hidden style='margin-top:12px'><div class=inrow>"
+            "<input type=text class=in id=cc-input name=code form=claudecode "
+            "placeholder='paste the code from Claude' autocomplete=off spellcheck=false>"
+            "<button class='btn primary' type=submit form=claudecode "
+            "data-busy='Connecting…'>Connect</button></div></div>",
             f"<form id=claudecode method=post action='/prbot/claude/code'>{hidden}</form>")
 
     def do_claude_connect(self, user, step, form):
