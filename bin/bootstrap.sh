@@ -95,6 +95,7 @@ if [ "$SRC" != "$BIN" ]; then
   install -m 0755 "$SRC/prbot-server.py" "$BIN/"
   install -m 0644 "$SRC"/prbot_diff.py "$BIN/"   # imported by the server, must sit beside it
   install -m 0644 "$SRC"/prbot_md.py "$BIN/"
+  install -m 0644 "$SRC"/prbot_assets.py "$BIN/"   # inlined brand logo + favicon
   install -m 0644 "$SRC/lib-common.sh" "$BIN/"
 else
   echo "   (running from $BIN — nothing to copy)"
