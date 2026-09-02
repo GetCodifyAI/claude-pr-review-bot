@@ -40,9 +40,9 @@ PRBOT_ENV=
 # sign-in only. Restart prbot after changing.
 GH_CLIENT_ID=
 GH_CLIENT_SECRET=
-# Classic OAuth App: set to `repo` (tokens act as the user; no expiry; user can revoke at
-# github.com/settings/applications). GitHub App: leave EMPTY — permissions come from the app,
-# tokens last 8 hours and are refreshed here automatically.
+# OAuth App: set to `repo` (tokens act as the user; tick "Expire user access tokens" when
+# creating the app and they last 8 hours, refreshed here automatically). GitHub App: leave
+# EMPTY — permissions come from the app instead of a scope.
 GH_OAUTH_SCOPES=
 
 # --- defaults that are usually right ----------------------------------------------------------

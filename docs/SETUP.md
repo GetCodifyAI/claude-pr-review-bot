@@ -141,8 +141,10 @@ settings → OAuth Apps → *New OAuth App*:
 | Homepage URL               | `https://prbot-<env>.staging.eng.cutanddry.com/prbot/`           |
 | Authorization callback URL | `https://prbot-<env>.staging.eng.cutanddry.com/prbot/oauth/callback` |
 | Enable Device Flow         | off                                                              |
+| Expire user access tokens  | **on** — 8-hour tokens with refresh; the dashboard refreshes them itself |
 
-Generate a client secret, then on the box:
+Register, copy the **Client ID**, click *Generate a new client secret* (shown once), then on
+the box:
 
 ```bash
 sed -i "s|^GH_CLIENT_ID=.*|GH_CLIENT_ID=<client id>|; s|^GH_CLIENT_SECRET=.*|GH_CLIENT_SECRET=<secret>|; s|^GH_OAUTH_SCOPES=.*|GH_OAUTH_SCOPES=repo|" ~/.claude-pr-bot/.env
@@ -151,19 +153,19 @@ sudo systemctl restart prbot
 
 Teammates click *Sign in with GitHub* → GitHub's *Authorize* screen → back to the dashboard,
 landing on Settings the first time so they add their Slack member ID. The token GitHub issues
-acts as them (comments carry their name), does not expire, and they can revoke it any time at
-github.com/settings/applications.
+acts as them (comments carry their name), lasts 8 hours and is refreshed server-side before
+it lapses, and they can revoke the app any time at github.com/settings/applications.
 
 > If the sign-in comes back with **"the token cannot see GetCodifyAI/cut-and-dry"**, the org
 > has *third-party OAuth application access restrictions* on. An org owner approves the app
 > once (Org settings → Third-party access → the pending request) and it works for everyone
 > from then on. Token sign-in keeps working meanwhile.
 
-**Option B — GitHub App (better tokens, needs an org owner to install it).** Same callback
-URL; permissions *Pull requests: Read & write*, *Contents: Read*; enable *Request user
-authorization (OAuth) during installation*; leave `GH_OAUTH_SCOPES` **empty**. User tokens
-last **8 hours** and the dashboard refreshes them itself; comments show the user's avatar with
-the app's badge. Ask an owner to install it on `GetCodifyAI` — until then the sign-in fails
+**Option B — GitHub App (narrower permissions, needs an org owner to install it).** Same
+callback URL; permissions *Pull requests: Read & write*, *Contents: Read*; enable *Request user
+authorization (OAuth) during installation*; leave `GH_OAUTH_SCOPES` **empty**. What it adds
+over Option A is scope: app-level permissions instead of the user's full `repo`, and org-owner
+revocation. Comments show the user's avatar with the app's badge. Ask an owner to install it on `GetCodifyAI` — until then the sign-in fails
 with the same message as above. This is the end-state; Option A is the way to be live today.
 
 ### Teammate — under two minutes
