@@ -48,6 +48,10 @@ import prbot_learn
 import prbot_md
 
 BRAND = "Robin"                    # product name shown beside the logo (see prbot_assets)
+CLAUDE_ICON = ("<svg viewBox='0 0 24 24' width=18 height=18 fill=currentColor aria-hidden=true>"
+               "<path d='M12 2c.3 3.1 1 4.9 2.2 6 1.1 1.2 2.9 1.9 6 2.2-3.1.3-4.9 1-6 2.2"
+               "-1.2 1.1-1.9 2.9-2.2 6-.3-3.1-1-4.9-2.2-6C8.6 11.2 6.8 10.5 3.7 10.2"
+               "c3.1-.3 4.9-1 6-2.2C10.9 6.9 11.6 5.1 12 2z'/></svg>")
 
 ROOT = Path(os.environ.get("ROOT", Path.home() / ".claude-pr-bot"))
 BIN = Path(__file__).resolve().parent
@@ -656,7 +660,7 @@ CSS = """
 --mono:ui-monospace,'SF Mono',SFMono-Regular,Menlo,monospace}
 html{-webkit-text-size-adjust:100%}
 body{font:15px/1.65 var(--font);background:var(--bg);color:var(--fg);margin:0;
-padding:0 0 150px;letter-spacing:-.006em;
+padding:0 0 40px;letter-spacing:-.006em;
 background-image:radial-gradient(900px 380px at 50% -160px,rgba(91,124,250,.10),transparent 70%)}
 ::selection{background:rgba(168,85,247,.32)}
 a{color:var(--blue);text-decoration:none}a:hover{color:#8aa2ff}
@@ -781,10 +785,10 @@ transition:border-color .18s,box-shadow .18s}
 .field{display:flex;gap:8px;align-items:stretch}.field input{flex:1;min-width:0}
 /* buttons */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;background:var(--panel2);
-color:var(--fg);border:1px solid var(--line);padding:10px 17px;border-radius:11px;font-size:.9rem;
+color:var(--fg);border:1px solid transparent;padding:10px 17px;border-radius:11px;font-size:.9rem;
 cursor:pointer;font-weight:600;font-family:inherit;letter-spacing:-.01em;
 transition:transform .15s cubic-bezier(.2,.7,.2,1),background .15s,border-color .15s,box-shadow .15s}
-.btn:hover{background:#202434;border-color:#31384d;transform:translateY(-1px)}
+.btn:hover{background:#212536;transform:translateY(-1px)}
 .btn:active{transform:translateY(0)}
 .btn.primary{background:var(--grad);border-color:transparent;color:#fff;background-size:140% 140%;
 box-shadow:0 6px 18px -6px rgba(168,85,247,.55)}
@@ -799,12 +803,11 @@ box-shadow:0 6px 18px -8px rgba(236,72,153,.55)}
 .btn:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none}
 .spin{width:13px;height:13px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;
 border-radius:50%;display:inline-block;animation:spin .6s linear infinite}
-/* sticky action bar */
-.bar{position:fixed;left:0;right:0;bottom:0;background:rgba(10,11,18,.82);
-border-top:1px solid var(--hair);backdrop-filter:saturate(140%) blur(14px);
--webkit-backdrop-filter:saturate(140%) blur(14px);z-index:20}
-.bar .inner{max-width:64rem;margin:0 auto;padding:14px 20px;display:flex;gap:12px;
-align-items:center;flex-wrap:wrap}
+/* post-selected action bar — inline at the end of the findings form (not fixed, so it never
+   overlaps the Approve/Housekeeping sections below it) */
+.bar{background:var(--panel2);border:1px solid var(--line);border-radius:14px;margin:14px 0 0;
+box-shadow:var(--shadow)}
+.bar .inner{padding:14px 18px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 .spacer{flex:1}
 /* banners */
 .banner{border-radius:12px;padding:14px 16px;margin:14px 0;font-size:.9rem;display:flex;gap:11px;
@@ -910,13 +913,12 @@ text-transform:uppercase;padding:3px 9px;border-radius:999px}
 .sidefoot .so{color:var(--dim);font-size:.86rem}.sidefoot .so:hover{color:var(--fg)}
 .main{flex:1;min-width:0}
 .main .wrap{padding:34px 36px 0;max-width:58rem;margin:0}
-.main .bar{left:242px}.main .bar .inner{max-width:58rem}
 @media(max-width:820px){.app{flex-direction:column}.app::before{position:sticky}
 .side{width:auto;height:auto;flex-direction:row;align-items:center;padding:9px 14px;gap:8px;z-index:30;
 background:rgba(10,11,18,.85);backdrop-filter:saturate(140%) blur(14px)}
 .side .brand{padding:0 4px 0 0}.nav{flex-direction:row;margin:0;gap:2px}.ni span{display:none}.ni{padding:8px}
 .sidefoot{margin:0 0 0 auto;flex-direction:row;align-items:center;border-top:0;padding:0;gap:10px}
-.sidefoot .nm,.sidefoot .live{display:none}.main .wrap{padding:22px 16px 0}.main .bar{left:0}}
+.sidefoot .nm,.sidefoot .live{display:none}.main .wrap{padding:22px 16px 0}}
 /* integration cards */
 .intg{display:flex;gap:15px;align-items:flex-start;padding:20px 22px;border:1px solid var(--line);
 border-radius:var(--r);background:var(--panel);box-shadow:var(--shadow);margin:14px 0;
@@ -930,6 +932,8 @@ justify-content:center;background:var(--panel2);border:1px solid var(--line);fon
 border-radius:999px;background:var(--okbg);color:#6fe6b2;border:1px solid var(--okln)}
 .tag-off{font-size:.68rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:3px 9px;
 border-radius:999px;background:var(--panel2);color:var(--faint);border:1px solid var(--line)}
+.tag-req{font-size:.68rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:3px 9px;
+border-radius:999px;background:var(--warnbg);color:#f6cd8a;border:1px solid var(--warnln)}
 /* how-it-works */
 .flow{display:flex;flex-direction:column;gap:0;margin:10px 0 8px}
 .fstep{display:flex;gap:16px;padding:0 0 26px}
@@ -981,7 +985,7 @@ color:var(--dim);font-size:.8rem;font-weight:600;cursor:pointer;padding:6px 10px
 @keyframes spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 @media(max-width:640px){.wrap{padding:20px 15px 0}.thread{margin-left:0}
-.bar .inner{padding:11px 15px}h1{font-size:1.28rem}.topbar{padding:0 15px}}
+h1{font-size:1.28rem}.topbar{padding:0 15px}}
 """
 
 JS = r"""
@@ -1450,7 +1454,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.to_login()
         if route in ("/settings", "/integrations"):
             return self.do_settings(user, form)
-        if route in ("/claude/start", "/claude/code", "/claude/cancel"):
+        if route in ("/claude/start", "/claude/code", "/claude/cancel", "/claude/disconnect"):
             return self.do_claude_connect(user, route.rsplit("/", 1)[1], form)
         pr, exp, sig = one("pr"), one("exp"), one("sig")
         if not pr.isdigit():
@@ -1573,57 +1577,16 @@ class Handler(BaseHTTPRequestHandler):
         if not nxt.startswith("/prbot/"):
             nxt = "/prbot/"
         has_slack, has_claude = bool(u.get("slack_id")), bool(u.get("claude_token_enc"))
-        how_gh = "GitHub sign-in" if u.get("gh_token_enc") else "token"
-
-        def ck(done, title, sub):
-            return (f"<div class='ck {'done' if done else 'todo'}'><span class=m>"
-                    f"{'✓' if done else '○'}</span><div class=t><b>{title}</b>"
-                    f"<span>{sub}</span></div></div>")
-        checklist = ("<div class=checklist>"
-                     + ck(True, f"GitHub — connected as {html.escape(user)}",
-                          f"via {how_gh}. Comments and approvals post under this name.")
-                     + ck(has_slack, "Slack — so review requests ping you",
-                          "Connected." if has_slack else
-                          "One paste, below. Without it cards still appear in the channel, "
-                          "but nothing notifies you.")
-                     + ck(has_claude, "Claude — run your reviews on your own account (optional)",
-                          "Connected." if has_claude else
-                          "Otherwise reviews you start use the shared team runner. Fine to skip.")
-                     + "</div>")
-
         claude_inner, claude_aux = self.claude_section(user, u, exp, sig, welcome, nxt)
         hidden = (f"<input type=hidden name=exp value='{exp}'>"
                   f"<input type=hidden name=sig value='{sig}'>"
                   f"<input type=hidden name=welcome value='{'1' if welcome else ''}'>"
                   f"<input type=hidden name=next value='{html.escape(nxt)}'>")
+        on = "<span class=tag-on>Connected</span>"
+        off = "<span class=tag-off>Not connected</span>"
+        req = "<span class=tag-req>Required</span>"
 
-        # --- onboarding (first sign-in) keeps the focused checklist + numbered steps ---------
-        if welcome:
-            head = (f"<h1>You're in, {html.escape(u.get('name') or user)}.</h1>"
-                    "<p class=lead>Two more things make this work well. The first takes ten "
-                    "seconds; the second is optional.</p>")
-            done_link = f"<a class=btn href='{html.escape(nxt)}'>Skip for now → queue</a>"
-            body = (
-                head + banner + checklist
-                + "<div class=card><form method=post action='/prbot/settings'>"
-                  "<ol class=steps>"
-                  "<li><h5>Slack member ID</h5>"
-                  "<div class=field><input type=text id=slack_id name=slack_id "
-                  f"placeholder='U0123ABCDEF' value='{html.escape(u.get('slack_id', ''))}' "
-                  "autocomplete=off spellcheck=false></div><div class=hint id=slackhint></div>"
-                  "<div class=hint>In Slack: your <b>profile picture</b> → <b>Profile</b> → the "
-                  "<b>⋮</b> menu → <b>Copy member ID</b>. Starts with <code>U</code>.</div></li>"
-                  "<li><h5>Claude account <span class='muted sm'>(optional)</span></h5>"
-                + claude_inner + "</li></ol>" + hidden
-                + "<p style='margin:18px 0 0'><button class='btn primary' type=submit "
-                  "data-busy='Saving…'>Save</button> " + done_link + "</p>"
-                  "</form>" + claude_aux + "</div>")
-            return self.reply(200, shell("Welcome", body, user=user, active="integrations"))
-
-        # --- Integrations page: one card per connection --------------------------------------
-        def card(icon, name, connected, sub, control):
-            chip = ("<span class=tag-on>Connected</span>" if connected
-                    else "<span class=tag-off>Not connected</span>")
+        def card(icon, name, chip, sub, control):
             return (f"<div class=intg><div class=ico>{icon}</div><div class=bd>"
                     f"<div class=hd><h4>{name}</h4>{chip}</div>"
                     f"<div class=hint style='margin-top:4px'>{sub}</div>{control}</div></div>")
@@ -1637,43 +1600,50 @@ class Handler(BaseHTTPRequestHandler):
                   ".16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.5"
                   "4 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58"
                   "-8-8-8z'/></svg>")
-        gh_sub = (f"Connected as <code>{html.escape(user)}</code> "
-                  + ("via GitHub sign-in — refreshed automatically. Comments and approvals post "
-                     "under this name." if u.get("gh_token_enc") else
-                     "via personal token. Comments and approvals post under this name."))
-        gh_ctl = ("<details style='margin-top:10px'><summary class=sm>Replace token</summary>"
-                  "<div class=dbody><div class=field style='margin-top:8px'>"
-                  "<input type=password id=gtok name=pat placeholder='ghp_…' autocomplete=off "
-                  "spellcheck=false><button type=button class='btn ghost sm' "
-                  "onclick=\"peek('gtok',this)\">show</button></div>"
-                  "<div class=hint>Leave blank to keep the current one. Paste a new token to "
-                  "rotate it.</div></div></details>")
-        slack_ctl = ("<div class=field style='margin-top:10px'><input type=text id=slack_id "
+        gh_ctl = ("<details style='margin-top:12px'><summary class=sm>Replace token</summary>"
+                  "<div class=dbody><form method=post action='/prbot/settings'>"
+                  "<div class=tokfield style='margin-top:8px'><input type=password id=gtok "
+                  "name=pat placeholder='ghp_…' autocomplete=off spellcheck=false>"
+                  "<button type=button class=peek onclick=\"peek('gtok',this)\">show</button></div>"
+                  "<div class=hint>Paste a new token to rotate it.</div>" + hidden
+                  + "<button class='btn soft sm block' type=submit data-busy='Saving…' "
+                  "style='margin-top:8px'>Save token</button></form></div></details>")
+        github_card = card(gh_svg, "GitHub", on,
+                           f"Connected as <code>{html.escape(user)}</code> — comments and "
+                           "approvals post under your name.", gh_ctl)
+
+        slack_ctl = ("<form method=post action='/prbot/settings'>"
+                     "<div class=tokfield style='margin-top:10px'><input type=text id=slack_id "
                      f"name=slack_id placeholder='U0123ABCDEF' "
                      f"value='{html.escape(u.get('slack_id', ''))}' autocomplete=off "
                      "spellcheck=false></div><div class=hint id=slackhint></div>"
                      "<div class=hint>In Slack: your <b>profile picture</b> → <b>Profile</b> → "
-                     "the <b>⋮</b> menu → <b>Copy member ID</b>.</div>")
+                     "the <b>⋮</b> menu → <b>Copy member ID</b>.</div>" + hidden
+                     + "<button class='btn soft sm block' type=submit data-busy='Saving…' "
+                     "style='margin-top:8px'>Save Slack ID</button></form>")
+        slack_card = card("💬", "Slack", on if has_slack else off,
+                          "Pings you when a review is requested.", slack_ctl)
 
-        github_slack_form = (
-            "<form method=post action='/prbot/settings'>"
-            + card(gh_svg, "GitHub", True, "Who Robin posts as.", gh_ctl)
-            + card("💬", "Slack", has_slack,
-                   "Pings you when a review is requested.", slack_ctl)
-            + hidden
-            + "<p style='margin:16px 0 4px'><button class='btn primary' type=submit "
-              "data-busy='Saving…'>Save</button></p></form>")
-        claude_card = ("<div class=intg><div class=ico>✳️</div><div class=bd>"
-                       "<div class=hd><h4>Claude</h4>"
-                       + ("<span class=tag-on>Connected</span>" if has_claude
-                          else "<span class=tag-off>Shared runner</span>")
-                       + "</div><div class=hint style='margin-top:4px'>Whose account runs the "
-                       "reviews you start.</div>" + claude_inner + "</div></div>")
+        claude_card = card(CLAUDE_ICON, "Claude", on if has_claude else req,
+                           "Reviews you start run on your own Claude account.",
+                           claude_inner) + claude_aux
+
+        cards = github_card + slack_card + claude_card
+        if welcome:
+            ready = has_claude and has_slack
+            cta = (f"<a class='btn primary block' href='{html.escape(nxt)}'>Go to your queue →"
+                   "</a>" if ready else
+                   "<button class='btn primary block' disabled>Connect Claude & Slack to "
+                   "continue</button>")
+            body = (f"<h1>Welcome to {html.escape(BRAND)}, {html.escape(u.get('name') or user)}</h1>"
+                    "<p class=lead>You're signed in with GitHub. Connect Slack and your Claude "
+                    "account to finish — then you're ready to review.</p>" + banner + cards
+                    + f"<div style='margin-top:20px'>{cta}</div>")
+            return self.reply(200, shell("Set up Robin", body, user=user, active="integrations"))
 
         body = (f"<h1>Integrations</h1>"
-                "<p class=lead>The three services Robin connects to. Everything is stored "
-                "encrypted on this box and used only on your behalf.</p>" + banner
-                + github_slack_form + claude_card + claude_aux)
+                "<p class=lead>The services Robin connects to. Everything is stored encrypted "
+                "on this box and used only on your behalf.</p>" + banner + cards)
         return self.reply(200, shell("Integrations", body, user=user, active="integrations"))
 
     def how_page(self, user):
@@ -1781,42 +1751,33 @@ class Handler(BaseHTTPRequestHandler):
                   f"<input type=hidden name=next value='{html.escape(nxt)}'>")
         if u.get("claude_token_enc"):
             return ((f"<div class=hint ok>✓ Connected {fmt_date(u.get('claude_added', 0))} — "
-                     "reviews you start run on your own account.</div>"
-                     "<p class=sm style='margin:8px 0 0'><label><input type=checkbox "
-                     "name=claude_disconnect> Disconnect and go back to the shared runner"
-                     "</label></p>"), "")
-        pend = claude_connect_pending(user)
-        if pend:
-            return (
-                "<div class=hint>Two steps, then you're done:</div>"
-                "<ol class=steps style='margin-top:10px'>"
-                f"<li><h5>Sign in on Claude</h5><p style='margin:0'><a class='btn primary' "
-                f"target=_blank rel=noopener href='{html.escape(pend['url'])}'>Open Claude to "
-                "authorize ↗</a></p><div class=hint>Sign in with <em>your</em> Claude account "
-                "and click <b>Authorize</b>. Claude then shows you a code.</div></li>"
-                "<li><h5>Paste the code</h5>"
-                "<div class=field><input type=text name=code form=claudecode "
-                "placeholder='paste the code from Claude' autocomplete=off spellcheck=false>"
-                "<button class='btn primary sm' type=submit form=claudecode "
-                "data-busy='Connecting…'>Connect</button>"
-                "<button class='btn ghost sm' type=submit form=claudecancel>Cancel</button>"
-                "</div><div class=hint>This attempt stays open for 15 minutes.</div></li></ol>",
-                f"<form id=claudecode method=post action='/prbot/claude/code'>{hidden}</form>"
-                f"<form id=claudecancel method=post action='/prbot/claude/cancel'>{hidden}</form>")
+                     "reviews you start run on your own Claude account.</div>"
+                     "<button class='btn soft sm' type=submit form=claudedisc "
+                     "style='margin-top:10px'>Disconnect</button>"),
+                    f"<form id=claudedisc method=post action='/prbot/claude/disconnect'>"
+                    f"{hidden}</form>")
+        # Not connected: mint the authorize URL now so the single "Connect with Claude" button
+        # opens Claude in a new tab (a real user gesture) AND reveals the paste-code field — no
+        # intermediate "start" click, no separate "open to authorize" step.
+        url, err = claude_connect_start(user)
+        if err:
+            return (f"<div class=hint err>{html.escape(err)}</div>", "")
+        reveal = ("document.getElementById('cc-code').hidden=false;"
+                  "this.classList.remove('primary');this.classList.add('soft');"
+                  "this.querySelector('.lbl').textContent='Reopen Claude';"
+                  "setTimeout(function(){var i=document.getElementById('cc-input');"
+                  "if(i)i.focus();},200)")
         return (
-            "<div class=hint>Reviews you start currently run on the <b>shared team runner</b>. "
-            "Connect your own Claude account and they bill to your plan instead — "
-            "sign in on Claude, paste back a code, done.</div>"
-            "<p style='margin:10px 0 0'><button class=btn type=submit form=claudestart "
-            "data-busy='Starting…'>Connect Claude account</button></p>"
-            "<details style='margin-top:10px'><summary class=sm><span>Or paste a token from "
-            "<code>claude setup-token</code> instead</span></summary><div class=dbody>"
-            "<div class=field style='margin-top:8px'><input type=password id=ctok "
-            "name=claude_token placeholder='sk-ant-oat01-…' autocomplete=off spellcheck=false>"
-            "<button type=button class='btn ghost sm' onclick=\"peek('ctok',this)\">show"
-            "</button></div><div class=hint>Run it on your laptop; it prints a token. Saved with "
-            "the Save button below, after one tiny check.</div></div></details>",
-            f"<form id=claudestart method=post action='/prbot/claude/start'>{hidden}</form>")
+            f"<a class='btn primary block' target=_blank rel=noopener href='{html.escape(url)}' "
+            f"onclick=\"{reveal}\">{CLAUDE_ICON}<span class=lbl>Connect with Claude</span></a>"
+            "<div class=hint>Opens Claude in a new tab — sign in with <em>your</em> account and "
+            "click <b>Authorize</b>. Claude shows you a code; paste it below.</div>"
+            "<div id=cc-code hidden style='margin-top:12px'>"
+            "<div class=tokfield><input type=text id=cc-input name=code form=claudecode "
+            "placeholder='paste the code from Claude' autocomplete=off spellcheck=false></div>"
+            "<button class='btn primary block' type=submit form=claudecode "
+            "data-busy='Connecting…' style='margin-top:8px'>Connect</button></div>",
+            f"<form id=claudecode method=post action='/prbot/claude/code'>{hidden}</form>")
 
     def do_claude_connect(self, user, step, form):
         one = lambda k: (form.get(k) or [""])[0]  # noqa: E731
@@ -1827,6 +1788,16 @@ class Handler(BaseHTTPRequestHandler):
         if step == "cancel":
             claude_connect_cancel(user)
             return back()
+        if step == "disconnect":
+            users = load_users()
+            uu = users.get(user) or {}
+            for k in ("claude_token_enc", "claude_refresh_enc", "claude_exp", "claude_added"):
+                uu.pop(k, None)
+            users[user] = uu
+            save_users(users)
+            claude_connect_cancel(user)
+            return back("<div class='banner ok'><span>✓</span><div>Claude disconnected — reviews "
+                        "you start use the shared team runner again.</div></div>")
         if step == "start":
             url, err = claude_connect_start(user)
             if err:
@@ -1863,7 +1834,10 @@ class Handler(BaseHTTPRequestHandler):
                                             f"</div></div>", welcome=welcome, nxt=nxt)
         users = load_users()
         u = users.get(user) or {}
-        u["slack_id"] = one("slack_id").strip()
+        # Each integration card is its own form, so only touch a field the form actually sent —
+        # the GitHub form has no slack_id and must not wipe it, and vice versa.
+        if "slack_id" in form:
+            u["slack_id"] = one("slack_id").strip()
         pat = one("pat").strip()
         if pat:
             login, name, err = verify_pat(pat)
@@ -1872,21 +1846,9 @@ class Handler(BaseHTTPRequestHandler):
             if login != user:
                 return again(f"That token belongs to <code>{html.escape(login)}</code>, not you.")
             u["pat_enc"], u["name"] = enc(pat), name
-        if one("claude_disconnect"):
-            u.pop("claude_token_enc", None)
-            u.pop("claude_added", None)
-        ctok = one("claude_token").strip()
-        if ctok:
-            ok, why = verify_claude_token(ctok)
-            if not ok:
-                return again(f"Claude did not accept that token: <code>{html.escape(why)}</code>")
-            u["claude_token_enc"], u["claude_added"] = enc(ctok), int(time.time())
         u["updated"] = int(time.time())
         users[user] = u
         save_users(users)
-        # Onboarding done: straight to the queue. Otherwise stay here with confirmation.
-        if welcome and u["slack_id"]:
-            return self.redirect(nxt if nxt.startswith("/prbot/") else "/prbot/")
         return self.settings_page(user, "<div class='banner ok'><span>✓</span><div>Saved."
                                         "</div></div>", welcome=welcome, nxt=nxt)
 
