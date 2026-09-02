@@ -32,8 +32,10 @@ import pty
 import re
 import select
 import signal
+import struct
 import subprocess
 import tempfile
+import termios
 import threading
 import time
 from hashlib import sha256
@@ -357,12 +359,19 @@ def claude_connect_start(login):
     cfg = tempfile.mkdtemp(prefix="claude-connect-", dir=ROOT / "tmp")
     pid, fd = pty.fork()
     if pid == 0:                                    # child: isolated, no browser, no token
-        os.environ.update(CLAUDE_CONFIG_DIR=cfg, HOME=cfg, BROWSER="true", TERM="xterm")
+        os.environ.update(CLAUDE_CONFIG_DIR=cfg, HOME=cfg, BROWSER="true", TERM="xterm",
+                          COLUMNS="220", LINES="60")
         os.environ.pop("CLAUDE_CODE_OAUTH_TOKEN", None)
         try:
             os.execvp("claude", ["claude", "setup-token"])
         finally:
             os._exit(127)
+    # A wide terminal keeps the token on one line — at 80 cols it wraps and the regex, which
+    # stops at whitespace, only ever sees a truncated prefix.
+    try:
+        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 60, 220, 0, 0))
+    except OSError:
+        pass
     # Stop the moment the hyperlink is complete — terminated by either OSC terminator.
     url_re = re.compile(rb"\x1b\]8;[^;]*;(https://[^\x1b\x07]+)[\x1b\x07]")
     out = _pty_read(fd, 30, lambda o: bool(url_re.search(o)))
@@ -378,24 +387,41 @@ def claude_connect_start(login):
 
 
 def claude_connect_code(login, code):
-    """(token, error). Feeds the pasted code to the waiting CLI and reads back the token."""
+    """(token, error). Feeds the pasted code to the waiting CLI and reads back the token.
+
+    The CLI may print a confirmation ("Login successful — Press Enter to continue") before the
+    token, so we nudge Enter whenever it looks like it is waiting, and keep reading up to ~90s.
+    On give-up we return the actual screen text, because a silent timeout is impossible to
+    debug from the outside.
+    """
     p = claude_connect_pending(login)
     if not p:
         return None, "That sign-in attempt expired — start again."
     os.write(p["fd"], code.strip().encode() + b"\r")
-    out = _pty_read(p["fd"], 60, lambda o: bool(TOKEN_RE.search(o.decode("utf-8", "replace")))
-                    or b"error" in o.lower())
-    txt = _pty_clean(out)
-    m = TOKEN_RE.search(txt)
-    if m:
-        claude_connect_cancel(login)
-        return m.group(0), None
-    if "error" in txt.lower():
-        os.write(p["fd"], b"\r")                    # "Press Enter to retry" → back to the prompt
-        _pty_read(p["fd"], 2)
-        why = re.sub(r".*?OAuth error:\s*", "", txt, flags=re.S).split("Press Enter")[0].strip()
-        return None, why or "Claude rejected that code."
-    return None, "Claude did not answer in time — paste the code again, or start over."
+    acc, deadline, nudged = b"", time.time() + 90, 0.0
+    while time.time() < deadline:
+        acc += _pty_read(p["fd"], 3)
+        txt = _pty_clean(acc)
+        m = TOKEN_RE.search(txt)
+        if m:
+            claude_connect_cancel(login)
+            return m.group(0), None
+        low = txt.lower()
+        if "oauth error" in low or "invalid code" in low:
+            os.write(p["fd"], b"\r")                # dismiss "Press Enter to retry"
+            _pty_read(p["fd"], 2)
+            why = re.sub(r".*?(oauth error:|invalid code)\s*", "", txt,
+                         flags=re.I | re.S).split("Press Enter")[0].strip()
+            return None, (why[:200] or "Claude rejected that code.")
+        # Waiting at a "press enter / continue" step, or just idle — give it a gentle nudge,
+        # at most every 6s so we do not spam newlines into the token field.
+        if time.time() - nudged > 6 and ("enter" in low or "continue" in low
+                                         or acc.endswith(b"> ") or acc.endswith(b">")):
+            os.write(p["fd"], b"\r")
+            nudged = time.time()
+    screen = _pty_clean(acc)[-260:]
+    return None, ("Claude did not finish in time. It last showed: "
+                  + (screen or "(nothing)") + " — start over and try again.")
 
 
 def review_env(login):
