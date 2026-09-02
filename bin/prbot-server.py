@@ -1476,7 +1476,7 @@ class Handler(BaseHTTPRequestHandler):
                         f"but it did not work here: <code>{html.escape(why)}</code></div></div>")
         store_claude_token(user, result)
         print(f"claude connected: {user}", flush=True)
-        if welcome and u.get("slack_id"):
+        if welcome and (load_users().get(user) or {}).get("slack_id"):
             return self.redirect(nxt if nxt.startswith("/prbot/") else "/prbot/")
         return back("<div class='banner ok'><span>✓</span><div>Claude connected — reviews you "
                     "start now run on your own account.</div></div>")
