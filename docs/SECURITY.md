@@ -115,8 +115,8 @@ Stated plainly, so nobody assumes otherwise:
 - **Any signed-in user can read any review on the box.** The review is shared by design; PR
   detail pages are not scoped to who was requested. Everyone signed in has repo access
   anyway, so this discloses nothing they could not `gh pr diff`.
-- **Someone with root on the box has everything** — the PAT, the Slack webhook, the Claude
-  credentials. It is a nonprod box, so the blast radius is your GitHub account rather than
+- **Someone with root on the box has everything** — every stored GitHub and Claude token, the
+  Slack webhook, the owner's Claude credentials. It is a nonprod box, so the blast radius is your GitHub account rather than
   production data, but that is not nothing.
 - **The agent reads untrusted PR content.** It runs with `Bash` allowed, in a worktree, on a
   nonprod box. A hostile PR could in principle try prompt injection to get the agent to do

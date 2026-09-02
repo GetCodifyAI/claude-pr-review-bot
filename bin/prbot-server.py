@@ -236,6 +236,49 @@ def oauth_fresh_token(login, u):
         return ""
 
 
+# --- per-user Claude account ---------------------------------------------------------------------
+# There is no third-party "sign in with Anthropic"; what exists is `claude setup-token`, which
+# hands a subscription token to automation (Anthropic documents it for GitHub Actions). A user
+# pastes theirs once; reviews THEY trigger then run with CLAUDE_CODE_OAUTH_TOKEN set to it,
+# billed to their own plan. Verified on the box: the env var wins over the stored login (a bogus
+# token 401s instead of silently falling back). No token = the shared runner, as before.
+def user_claude_token(login):
+    u = load_users().get(login) or {}
+    if not u.get("claude_token_enc"):
+        return ""
+    try:
+        return dec(u["claude_token_enc"])
+    except RuntimeError:
+        return ""
+
+
+def verify_claude_token(tok):
+    """(ok, message). One tiny haiku call — a bad token fails fast with a 401."""
+    try:
+        r = subprocess.run(["claude", "-p", "Reply with exactly: OK", "--max-turns", "1",
+                            "--model", "haiku"], capture_output=True, text=True, timeout=75,
+                           stdin=subprocess.DEVNULL,
+                           env={**os.environ, "CLAUDE_CODE_OAUTH_TOKEN": tok})
+    except FileNotFoundError:
+        return False, "claude is not installed on this box."
+    except subprocess.TimeoutExpired:
+        return False, "Claude did not answer within 75 seconds — try again."
+    if r.returncode != 0:
+        tail = ((r.stderr or r.stdout or "").strip().splitlines() or ["unknown error"])[-1]
+        return False, tail[:200]
+    return True, ""
+
+
+def review_env(login):
+    """Environment for a review spawned by `login`: their Claude token if connected."""
+    env = {**os.environ, "PRBOT_RUN_AS": "shared"}
+    tok = user_claude_token(login) if login else ""
+    if tok:
+        env["CLAUDE_CODE_OAUTH_TOKEN"] = tok
+        env["PRBOT_RUN_AS"] = login
+    return env
+
+
 def verify_pat(pat):
     """(login, name, error). Proves the token is real and can see the repo before storing it."""
     r = gh(["api", "user"], token=pat, timeout=20)
@@ -1063,8 +1106,21 @@ class Handler(BaseHTTPRequestHandler):
               "<textarea class=short name=pat placeholder='ghp_… (optional)' "
               "style='min-height:52px'></textarea>"
               "<h4>Claude</h4>"
-              "<p class='muted sm'>Reviews run on the shared team runner on this box. "
-              "Nothing to connect.</p>"
+            + (("<p class='muted sm'>✓ <b>Connected</b> — reviews you start run on your own "
+                f"Claude account (added {fmt_date(u.get('claude_added', 0))}).</p>"
+                "<p class=sm><label><input type=checkbox name=claude_disconnect> Disconnect "
+                "and go back to the shared runner</label></p>")
+               if u.get("claude_token_enc") else
+               "<p class='muted sm'>Reviews you start currently run on the <b>shared team "
+               "runner</b>. To run them on your own Claude account instead, on your laptop run "
+               "<code>claude setup-token</code> — it opens your browser, you sign in with your "
+               "Claude account, and it prints a token. Paste it here. There is no sign-in "
+               "button for this: Anthropic offers no third-party login, and this is the "
+               "mechanism it documents for handing a subscription to automation.</p>")
+            + "<textarea class=short name=claude_token placeholder='sk-ant-oat01-… (optional)' "
+              "style='min-height:52px'></textarea>"
+              "<p class='muted sm'>Verified with one tiny call before it is stored (encrypted, "
+              "like your GitHub token). Only reviews <em>you</em> click to start use it.</p>"
               f"<input type=hidden name=exp value='{exp}'>"
               f"<input type=hidden name=sig value='{sig}'>"
               "<p><button class='btn primary' type=submit>Save</button> "
@@ -1091,6 +1147,17 @@ class Handler(BaseHTTPRequestHandler):
                                                 f"{html.escape(login)}</code>, not you.</div>"
                                                 f"</div>")
             u["pat_enc"], u["name"] = enc(pat), name
+        if one("claude_disconnect"):
+            u.pop("claude_token_enc", None)
+            u.pop("claude_added", None)
+        ctok = one("claude_token").strip()
+        if ctok:
+            ok, why = verify_claude_token(ctok)
+            if not ok:
+                return self.settings_page(user, f"<div class='banner err'><span>🚫</span>"
+                                                f"<div>Claude did not accept that token: "
+                                                f"<code>{html.escape(why)}</code></div></div>")
+            u["claude_token_enc"], u["claude_added"] = enc(ctok), int(time.time())
         u["updated"] = int(time.time())
         users[user] = u
         save_users(users)
@@ -1233,6 +1300,13 @@ class Handler(BaseHTTPRequestHandler):
         if meta.get("changedFiles"):
             size = (f" · +{meta.get('additions', 0):,} −{meta.get('deletions', 0):,} · "
                     f"{meta['changedFiles']} files")
+        runner_f = STATE / pr / "runner"
+        if runner_f.exists():
+            who = runner_f.read_text().strip()
+            banner += ("<p class='muted sm'>Reviewed on "
+                       + (f"<code>{html.escape(who)}</code>'s Claude account"
+                          if who and who != "shared" else "the shared team runner")
+                       + ".</p>")
         head = (f"<p class=crumb><a href='{link('', '')}'>← queue</a></p>"
                 f"<h1>#{pr} — {html.escape(title)}</h1>"
                 f"<div class=meta>{pill(st)}"
@@ -1440,7 +1514,8 @@ class Handler(BaseHTTPRequestHandler):
             (d / "status").write_text("queued")
             with open(d / "run.log", "ab") as log:
                 subprocess.Popen([str(BIN / "run-review.sh"), pr], stdout=log,
-                                 stderr=subprocess.STDOUT, start_new_session=True)
+                                 stderr=subprocess.STDOUT, start_new_session=True,
+                                 env=review_env(user))
         return self.redirect(link("pr", pr))
 
     def do_post_comments(self, pr, user, form):

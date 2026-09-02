@@ -186,10 +186,31 @@ within 3 minutes, with the review already running.
   everyone; only the mentioned person is pinged.
 - Sign in yourself at `/prbot/login` like everyone else. Your pre-multi-user history
   (`state/<pr>/posted.json` etc.) is read as yours automatically.
-- Reviews run on this box's Claude sign-in and **serialize** — one at a time, box-wide — so
-  two agents never share a 3.8 GB box. Queued reviews show as `queued — waiting…` on their
-  page. If the pilot grows, set `ANTHROPIC_API_KEY` in the systemd unit's environment to
-  move off your personal subscription; `claude -p` honours it.
+- Reviews run on this box's Claude sign-in unless the person starting one has connected
+  their own account (below), and **serialize** — one at a time, box-wide — so two agents never
+  share a small box. Queued reviews show as `queued — waiting…` on their page. To take
+  yourself out of the billing path entirely, set `ANTHROPIC_API_KEY` in the systemd unit's
+  environment; `claude -p` honours it for anyone who has not connected their own account.
+
+### Connect your own Claude account (optional, per person)
+
+By default every review runs on the box's shared Claude sign-in — the owner's subscription.
+Anyone can move *their* reviews onto their own account:
+
+1. On your laptop: `claude setup-token`. It opens the browser, you sign in with your Claude
+   account, and it prints a long-lived token.
+2. Dashboard → *Settings* → paste it under **Claude** → *Save*. It is verified with one tiny
+   call and stored encrypted, like your GitHub token.
+
+From then on, reviews **you** click to start run with your token, billed to your plan and
+subject to your plan's limits. Reviews other people start are unaffected; a review is shared
+per PR, so whoever starts it pays for it and everyone requested reads it. The PR page says
+which account it ran on. *Disconnect* in Settings reverts you to the shared runner.
+
+There is no "Sign in with Anthropic" button because Anthropic offers no third-party login;
+`claude setup-token` is the mechanism it documents for handing a subscription to automation
+(it is how the official GitHub Action authenticates). The token is honoured over the box's
+own sign-in — verified: a bad one fails with a `401` rather than silently using the owner's.
 
 ### What each person sees
 

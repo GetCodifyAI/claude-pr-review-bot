@@ -58,6 +58,10 @@ exec 8>"$ROOT/review.lock"
 flock 8
 
 status "reviewing"
+# Whose Claude account this runs on: the dashboard sets PRBOT_RUN_AS (and, for a connected
+# user, CLAUDE_CODE_OAUTH_TOKEN) when it spawns us. Recorded so the page can say so.
+echo "${PRBOT_RUN_AS:-shared}" > "$DIR/runner"
+echo "[#$PR] running on: ${PRBOT_RUN_AS:-shared}"
 rm -f "$wt/review.json"
 (cd "$wt" && timeout 25m claude -p "Use the pr-review skill to review PR #$PR of $REPO.
 
