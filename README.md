@@ -1,8 +1,8 @@
 # Claude PR Review Bot
 
-Someone requests your review on a Cut+Dry PR → you get a **Slack card** → you click through
-to a **dashboard** on your own staging box → an agent has already read the diff and written
-findings → you tick the ones worth posting, edit any of them, and post **as yourself**.
+Someone requests your review on a Cut+Dry PR → you get a **Slack ping** → you click through
+to a **dashboard** → an agent has already read the diff and written findings → you tick the
+ones worth posting, edit any of them, post **as yourself**, and approve — in one place.
 
 Nothing reaches GitHub without a human clicking. The review step never writes to GitHub at
 all — it only produces a JSON file the dashboard renders.
@@ -44,9 +44,11 @@ Two things it deliberately does *not* do:
 - **[docs/SECURITY.md](docs/SECURITY.md)** — the endpoint is on the public internet. Read
   this before going live.
 
-Everyone runs their **own instance** on their **own staging box**, against their **own**
-review queue. There is no shared deployment — the bot polls for PRs awaiting *your* review
-and posts under *your* name, so a shared one would make no sense.
+**One box serves the whole team.** Each person signs in once with their own GitHub token
+(+ Slack member ID), and from then on: review requested → Slack pings *them* → they open the
+dashboard → the agent's findings are already there → they tick, edit, post and approve —
+**as themselves**. The review is shared per PR (one agent run, however many reviewers);
+selection, posting and approval are per person. See [docs/SETUP.md](docs/SETUP.md#team-pilot).
 
 ## Layout
 

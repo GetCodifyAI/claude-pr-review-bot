@@ -13,12 +13,25 @@ the dangerous ones are short-lived, and the process itself cannot be reached dir
 
 ## Controls
 
-- **Every entry point is HMAC-signed** over `action:pr:expiry` with `PRBOT_SECRET`. Unsigned,
-  altered or expired requests get a 403.
+- **Pages need a signed-in session.** Signing in means proving a GitHub PAT is real (`/user`)
+  and can see the repo, then receiving an HMAC-signed, HttpOnly, Secure, SameSite cookie
+  valid for 30 days. Unauthenticated requests — including POSTs — bounce to the login page.
+  Deleting a user from `users.json` invalidates their session on the next request.
 
-- **Two token tiers.** Page links last 7 days — viewing is harmless. Post and approve carry
-  their **own 30-minute tokens, minted at render time**, so a bookmarked or forwarded URL
-  cannot post or approve later. Getting the page is not getting the button.
+- **Stored PATs are encrypted at rest** (AES-256-CBC, PBKDF2) with a key *derived* from
+  `PRBOT_SECRET`, not stored beside them. Rotating the secret therefore also invalidates every
+  stored PAT — the right outcome if the secret was rotated because it leaked. The shell
+  scripts only ever read login + Slack ID; decryption happens in the server, at post time.
+
+- **Writes use the acting user's own PAT.** The service token in `.env` does reads and the
+  base clone only. Nothing can post or approve under a name other than the signed-in user's,
+  and GitHub's own self-approval check runs against that user.
+
+- **Every action is HMAC-signed** over `action:pr:expiry` with `PRBOT_SECRET` — post, approve,
+  mark-done, archive, start-review. Tokens are **minted at render time and last 30 minutes**,
+  so a bookmarked or forwarded page cannot act later, and a cross-site form has nothing valid
+  to present. Pages themselves are gated by the session, not a signature, so they are plain
+  bookmarkable URLs.
 
 - **Approve is gated** on the PR being open, not a draft, not authored by you, and having a
   `review.json` on this box. Deliberately *not* gated on "are you still a requested
@@ -46,16 +59,23 @@ the dangerous ones are short-lived, and the process itself cannot be reached dir
 - **Nothing reaches GitHub without a human clicking.** `run-review.sh` has no write path to
   GitHub at all.
 
-## Your PAT
+## Your PAT — and now your teammates'
+
+Every signed-in user's PAT sits on this box, encrypted, decryptable by anyone with root and
+the `.env`. For a pilot among a trusted team on a non-prod box, with each person able to
+revoke their own token at any time, that is an accepted trade. It is **not** the end state:
+the GitHub App upgrade (user-to-server tokens, 8-hour expiry, org-owner revocation, no paste)
+replaces this layer without touching the review or dashboard logic. Tell pilots to give
+their PAT a 90-day expiry.
 
 It is a classic PAT with `repo` scope, which is broad — it can write to every repo you can
-write to, not just the monolith. That is a real cost, accepted because the alternative
-(a GitHub App) posts as a bot, and the entire value of this tool is that reviews carry a
-human name.
+write to, not just the monolith. That is the cost of shipping today without an org owner's
+approval; it is not because human attribution needs it. A GitHub App's *user-to-server*
+token keeps the human's name on every comment with an 8-hour lifetime and per-app scope.
 
 Mitigations that are worth doing:
 
-- **Give it an expiry.** 90 days. Re-pasting it into `.env` twice a year is cheap.
+- **Give it an expiry.** 90 days. Re-pasting it in Settings twice a year is cheap.
 - **Do not add scopes it does not need**, especially `read:org`. See
   [SETUP.md](SETUP.md#a-github-pat) for why it isn't needed.
 - **Revoke it the moment the box is decommissioned**, not later. An ephemeral staging box
@@ -76,9 +96,10 @@ Every outstanding link is immediately invalid, including your own. See
 
 ## Slack
 
-Point the webhook at a **private, single-member channel**. The cards carry PR titles, authors
-and diff sizes, and the review verdict card carries the agent's summary — which can quote
-code. A shared channel leaks all of that to everyone in it.
+Point the webhook at a **private channel containing only the pilot group**. Cards `@mention`
+the requested reviewer, so one channel serves everyone. The cards carry PR titles, authors and
+diff sizes, and the review-ready card carries the agent's summary — which can quote code.
+Everyone in the channel can already read the repo; do not widen it beyond that.
 
 Treat the webhook URL itself as a secret: anyone holding it can post into that channel.
 
@@ -86,9 +107,9 @@ Treat the webhook URL itself as a secret: anyone holding it can post into that c
 
 Stated plainly, so nobody assumes otherwise:
 
-- **Someone with a valid, unexpired page link can read your review.** Findings on a private
-  repo's PR, in prose. The 7-day page TTL bounds this; the 30-minute action TTL means they
-  still cannot post or approve.
+- **Any signed-in user can read any review on the box.** The review is shared by design; PR
+  detail pages are not scoped to who was requested. Everyone signed in has repo access
+  anyway, so this discloses nothing they could not `gh pr diff`.
 - **Someone with root on the box has everything** — the PAT, the Slack webhook, the Claude
   credentials. It is a nonprod box, so the blast radius is your GitHub account rather than
   production data, but that is not nothing.

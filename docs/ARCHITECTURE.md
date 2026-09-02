@@ -43,7 +43,9 @@ link in Slack and the vhost Apache is listening on cannot drift apart.
 
 | Route                    |                                                                  |
 | ------------------------ | ---------------------------------------------------------------- |
-| `GET /prbot/?tab=&sort=` | Index — tabs, sorting, dates                                     |
+| `GET /prbot/login` `POST` | Sign in with a GitHub PAT + optional Slack member ID            |
+| `GET /prbot/settings` `POST` | Update Slack ID / rotate PAT / sign out                      |
+| `GET /prbot/?tab=&sort=` | Index — **your** queue: tabs, sorting, dates                     |
 | `GET /prbot/pr?pr=N`     | Detail — timeline, assessment, prose, editable findings, actions |
 | `GET /prbot/review?pr=N` | Start a review, redirect to the detail page                      |
 | `POST /prbot/post`       | Post the selected (possibly edited) comments                     |
@@ -72,13 +74,13 @@ comment posted with it.
 - **`run-review.sh` never touches GitHub.** It only produces `review.json`. Every write is a
   separate, deliberate human click. This is the property that makes the whole thing safe to
   run against a real review queue.
-- **Slack dedup is per PR number, not per head SHA.** A PR is announced once and never again;
-  pushing new commits must not re-ping you. The dashboard always reflects the live queue
+- **Slack dedup is per PR + login, not per head SHA.** Each reviewer is pinged once per PR and
+  never again; pushing new commits must not re-ping anyone. The dashboard always reflects the live queue
   regardless of what has been announced, so Slack is a one-time nudge, not the source of
   truth.
-- **One search per poll, not a page-through.** The monolith sees 200+ PR updates a week.
-  `review-requested:<you>` resolves server-side, so the poll costs one API call per 3 minutes
-  and `queue.json` means page loads never call `gh` at all.
+- **One search per user per poll, not a page-through.** The monolith sees 200+ PR updates a
+  week. `review-requested:<login>` resolves server-side, so the poll costs one API call per
+  user per 3 minutes, and `queue.json` means page loads never call `gh` at all.
 
 ## Per-PR state
 
@@ -94,6 +96,13 @@ comment posted with it.
 | `agent.log`     | What the agent did                                                |
 | `run.log`       | The run wrapper's log                                             |
 | `status`        | `fetching` / `reviewing` / `done (N findings)` / `failed: …`      |
+
+Per-user markers live one level down, in `state/<pr>/users/<login>/`: `opened`, `posted.json`,
+`payload.json`, `approved`, `archived`. The review itself stays at `state/<pr>/` and is shared.
+Markers found directly in `state/<pr>/` predate multi-user and are read as the box owner's.
+
+`queue.json` rows carry `requested: [logins]` — the union of everyone awaiting that PR — and
+the dashboard filters on it, so one poller output serves every user.
 
 `meta.json` exists because `queue.json` only holds PRs *currently* awaiting review — the
 moment you submit, the PR drops out of it, and without the cache the dashboard would lose the

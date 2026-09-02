@@ -29,6 +29,9 @@ echo "==> directories"
 mkdir -p "$BIN" "$ROOT/wt" "$ROOT/state"
 chmod 700 "$ROOT"
 touch "$ROOT/seen" "$ROOT/used-nonces"
+# Teammates' encrypted PATs + Slack IDs, written by the dashboard on sign-in.
+[ -f "$ROOT/users.json" ] || echo '{}' > "$ROOT/users.json"
+chmod 600 "$ROOT/users.json"
 
 echo "==> .env"
 # Ensure every documented key EXISTS rather than only writing the file when it is absent.
@@ -216,8 +219,12 @@ crontab "$tmp"; rm -f "$tmp"
 echo
 echo "Done. Checks:"
 echo "  curl -s localhost:$PORT/prbot/health          # -> ok"
-echo "  curl -s \$PUBLIC_URL/prbot/health              # -> ok (through the ALB)"
+echo "  curl -s https://$PRBOT_HOST/prbot/health       # -> ok (through the ALB)"
 echo "  $BIN/pr-watch.sh                              # -> Slack card per open request"
+echo
+echo "Sign in (you and every teammate):  https://$PRBOT_HOST/prbot/login"
+echo "  Each person pastes their own GitHub PAT (repo scope) + Slack member ID once."
+echo "  Reviews are shared per PR; posting and approving happen as each signed-in user."
 echo
 # Report the ACTUAL value, never a hardcoded assumption — a stale "nothing is written"
 # reassurance is worse than none once someone has flipped it.

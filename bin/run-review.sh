@@ -50,6 +50,13 @@ git -C "$BASE" worktree remove --force "$wt" 2>/dev/null || true
 git -C "$BASE" worktree add -q --force -B "review-$PR" "$wt" "origin/$branch" \
   || fail "could not create worktree"
 
+# One review at a time, box-wide. The per-PR lock above stops duplicates of the SAME review;
+# this one stops two DIFFERENT reviews from sharing a box that OOMs with two agents on it.
+# The dashboard shows "reviewing" (the per-PR lock is held) with this text as the status.
+status "queued — waiting for another review to finish"
+exec 8>"$ROOT/review.lock"
+flock 8
+
 status "reviewing"
 rm -f "$wt/review.json"
 (cd "$wt" && timeout 25m claude -p "Use the pr-review skill to review PR #$PR of $REPO.
@@ -71,6 +78,17 @@ jq -e . "$wt/review.json" >/dev/null 2>&1 || fail "review.json is not valid JSON
 cp "$wt/review.json" "$DIR/review.json"
 git -C "$BASE" worktree remove --force "$wt" 2>/dev/null || true
 
+# Everyone this PR is awaiting gets the ready ping — the review is shared, only the posting
+# is per person. Slack member IDs come from users.json; fall back to the owner.
+who=""
+for login in $(jq -r --arg n "$PR" '.[] | select((.number|tostring)==$n) | .requested[]?' \
+                  "$ROOT/queue.json" 2>/dev/null); do
+  sid=$(jq -r --arg l "$login" '.[$l].slack_id // ""' "$ROOT/users.json" 2>/dev/null)
+  who+="${sid:+<@$sid> }"
+done
+[ -n "$who" ] || who="<@$(jq -r --arg l "$REVIEWER" '.[$l].slack_id // ""' "$ROOT/users.json" 2>/dev/null)> "
+[ "$who" = "<@> " ] && who=""
+
 event=$(jq -r '.event // "COMMENT"' "$DIR/review.json")
 n=$(jq '.comments | length' "$DIR/review.json")
 blockers=$(jq '[.comments[]? | select(.severity == "blocker")] | length' "$DIR/review.json")
@@ -80,10 +98,10 @@ icon=$([ "$event" = "REQUEST_CHANGES" ] && echo "🔴" || echo "🟢")
 status "done ($n findings)"
 
 jq -n --arg t "$title" --arg u "$url" --arg p "$PR" --arg s "$summary" --arg e "$event" \
-      --arg i "$icon" --arg n "$n" --arg b "$blockers" --arg l "$detail" '
+      --arg i "$icon" --arg n "$n" --arg b "$blockers" --arg l "$detail" --arg w "$who" '
 {blocks:[
   {type:"section", text:{type:"mrkdwn",
-    text:($i + " Review ready — *<" + $u + "|#" + $p + " — " + $t + ">*\n*" + $e
+    text:($w + $i + " Review ready — *<" + $u + "|#" + $p + " — " + $t + ">*\n*" + $e
           + "* · " + $n + " finding(s), " + $b + " blocker(s)")}},
   {type:"section", text:{type:"mrkdwn", text:$s}},
   {type:"actions", elements:[

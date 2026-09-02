@@ -123,6 +123,45 @@ reviewer on something, or add yourself to any open PR to test.
 Click **Open review** on the card. The first visit starts the review; the page reports
 `reviewing` and Slack pings you again in 10–15 minutes when it is ready.
 
+## Team pilot
+
+One box, many reviewers. The owner does steps 1–5 above once; everyone else does this:
+
+### Teammate — under two minutes
+
+1. Open `https://prbot-<env>.staging.eng.cutanddry.com/prbot/login` (the owner sends you the
+   link).
+2. Paste a **classic GitHub PAT** with `repo` scope. It is verified against GitHub, stored
+   encrypted on the box, and used for exactly one thing: posting the comments and approvals
+   *you* choose, under *your* name.
+3. Paste your **Slack member ID** (Slack profile → ⋮ → *Copy member ID*) so review requests
+   ping you. Optional; you can add it later in *Settings*.
+
+Done. The next time someone requests your review, you get a card in the shared channel
+within 3 minutes, with the review already running.
+
+### Owner — one-time
+
+- Create a **private Slack channel** (e.g. `#pr-review-bot`), invite the pilot group, and
+  point `SLACK_WEBHOOK` at it. Cards `@mention` whoever is requested, so one channel serves
+  everyone; only the mentioned person is pinged.
+- Sign in yourself at `/prbot/login` like everyone else. Your pre-multi-user history
+  (`state/<pr>/posted.json` etc.) is read as yours automatically.
+- Reviews run on this box's Claude sign-in and **serialize** — one at a time, box-wide — so
+  two agents never share a 3.8 GB box. Queued reviews show as `queued — waiting…` on their
+  page. If the pilot grows, set `ANTHROPIC_API_KEY` in the systemd unit's environment to
+  move off your personal subscription; `claude -p` honours it.
+
+### What each person sees
+
+| Tab / page  | Scope                                                          |
+| ----------- | -------------------------------------------------------------- |
+| To review   | PRs currently awaiting **your** review                         |
+| Reviewed    | Reviews you have opened that you have not posted yet           |
+| Posted      | Posted by **you** (someone else posting the same PR is theirs) |
+| Approved    | Approved by **you**                                            |
+| PR detail   | The shared review; your own tick/edit state and actions        |
+
 ## 6. Configuration reference
 
 Everything lives in `~/.claude-pr-bot/.env` (chmod 600).
@@ -140,6 +179,11 @@ Everything lives in `~/.claude-pr-bot/.env` (chmod 600).
 | `DRY_RUN`       | default 1 | `1` = dashboard works fully but refuses to write to GitHub     |
 | `SKIP_BOT_PRS`  | default 0 | `1` ignores PRs authored by bots                               |
 | `MIN_FREE_MB`   | default 800 | Refuse to start a review below this much free RAM            |
+
+Per-person data is not in `.env`. It lives in `~/.claude-pr-bot/users.json` (chmod 600):
+`{login: {pat_enc, slack_id, name, added}}`, written by the dashboard on sign-in. PATs are
+AES-256 encrypted with a key derived from `PRBOT_SECRET`. To remove someone, delete their
+key from that file — their session dies on the next request.
 
 > **Gotcha:** `prbot-server.py` reads `.env` **once, at startup**. After editing any value —
 > especially `DRY_RUN` — run `sudo systemctl restart prbot` or the change silently does

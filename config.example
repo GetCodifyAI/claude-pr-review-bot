@@ -6,6 +6,9 @@
 #
 # The real file is chmod 600 and lives outside the rsync target, so `pnpm staging:dev`
 # cannot delete it and it never reaches a git repo.
+#
+# Per-person data (each teammate's encrypted PAT + Slack member ID) is NOT here — it is in
+# ~/.claude-pr-bot/users.json, written by the dashboard when they sign in.
 
 # --- secrets you paste in yourself (bootstrap leaves them empty) ------------------------------
 

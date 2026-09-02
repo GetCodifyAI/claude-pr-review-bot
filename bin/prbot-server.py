@@ -2,17 +2,25 @@
 """prbot-server.py — review dashboard, served on 127.0.0.1 behind Apache's /prbot proxy.
 
 Reachable over the PUBLIC internet (the staging ALB answers *.staging.eng.cutanddry.com with
-no auth in front), so every entry point is HMAC-signed. Page links last 7 days; the mutating
-actions embedded in a page — posting comments, approving — carry their own 30-minute tokens
-minted at render time, so a shared or bookmarked page URL cannot approve anything later.
+no auth in front). Pages need a signed session cookie, obtained by signing in with your own
+GitHub PAT. The mutating actions embedded in a page — posting comments, approving — carry
+their own 30-minute HMAC tokens minted at render time, so a forwarded or bookmarked page
+cannot approve anything later, and a cross-site form post has no token to present.
+
+Multi-user model: the REVIEW is per PR and shared (one agent run serves every reviewer);
+SELECTION, POSTING and APPROVAL are per user, done with that user's own PAT so GitHub
+attributes them to the human. Per-user markers live in state/<pr>/users/<login>/.
 
 Routes
   GET  /prbot/health
-  GET  /prbot/?exp&sig                 index — every PR awaiting review, with state
-  GET  /prbot/pr?pr=N&exp&sig          detail — full review, editable findings, actions
+  GET  /prbot/login  POST /prbot/login  sign in with a GitHub PAT (+ optional Slack member ID)
+  GET  /prbot/logout
+  GET  /prbot/settings  POST /prbot/settings
+  GET  /prbot/?tab&sort                index — PRs awaiting YOUR review, with your state
+  GET  /prbot/pr?pr=N                  detail — shared review, your editable findings, actions
   GET  /prbot/review?pr=N&exp&sig      start a review, then redirect to the detail page
-  POST /prbot/post                     post the selected (possibly edited) comments
-  POST /prbot/approve                  approve as the reviewer
+  POST /prbot/post                     post the selected (possibly edited) comments as you
+  POST /prbot/approve                  approve as you
 """
 import calendar
 import fcntl
@@ -24,9 +32,10 @@ import re
 import subprocess
 import time
 from hashlib import sha256
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 import prbot_diff
 import prbot_md
@@ -57,12 +66,121 @@ def load_env():
 
 ENV = load_env()
 SECRET = ENV.get("PRBOT_SECRET", "")
+# The SERVICE token: reads (diffs, PR metadata, the poller's searches) and the base clone.
+# Never used to post or approve — those use the signed-in user's own PAT, see user_pat().
 PAT = ENV.get("GITHUB_PAT", "")
 REPO = ENV.get("REPO", "GetCodifyAI/cut-and-dry")
-# No default: an inherited login would render someone else's queue and post under their
-# name. bootstrap.sh always writes it, and lib-common.sh's require_env guards the CLI side.
+# The box owner. Their legacy per-PR markers (state/<pr>/posted.json etc., from before the
+# multi-user layout) are read as theirs, so history survives the upgrade.
 REVIEWER = ENV.get("REVIEWER", "")
 DRY_RUN = ENV.get("DRY_RUN", "1") == "1"
+
+USERS = ROOT / "users.json"
+SESSION_TTL = 30 * 24 * 3600
+
+
+# --- users ---------------------------------------------------------------------------------
+# users.json: {login: {pat_enc, slack_id, name, added}}. PATs are AES-encrypted with a key
+# derived from PRBOT_SECRET — derived, not stored, so rotating the secret also invalidates
+# every stored PAT, which is the right outcome if it was rotated because it leaked. The
+# shell scripts only ever read login + slack_id; they never see a PAT.
+def _users_key():
+    return sha256(f"{SECRET}:users".encode()).hexdigest()
+
+
+def _openssl(mode, data):
+    r = subprocess.run(["openssl", "enc", "-aes-256-cbc", "-pbkdf2", "-salt", "-a", "-A",
+                        mode, "-pass", "env:PRBOT_KEY"], input=data, capture_output=True,
+                       text=True, env={**os.environ, "PRBOT_KEY": _users_key()})
+    if r.returncode != 0:
+        raise RuntimeError((r.stderr or "openssl failed").strip()[:200])
+    return r.stdout.strip()
+
+
+def enc(plain):
+    return _openssl("-e", plain)
+
+
+def dec(cipher):
+    return _openssl("-d", cipher)
+
+
+def load_users():
+    if not USERS.exists():
+        return {}
+    try:
+        return json.loads(USERS.read_text()) or {}
+    except json.JSONDecodeError:
+        return {}
+
+
+def save_users(users):
+    tmp = USERS.with_suffix(".tmp")
+    tmp.write_text(json.dumps(users, indent=1))
+    os.chmod(tmp, 0o600)
+    tmp.replace(USERS)
+
+
+def user_pat(login):
+    u = load_users().get(login) or {}
+    if u.get("pat_enc"):
+        try:
+            return dec(u["pat_enc"])
+        except RuntimeError:
+            return ""
+    return ""
+
+
+def verify_pat(pat):
+    """(login, name, error). Proves the PAT is real and can see the repo before storing it."""
+    r = gh(["api", "user"], token=pat, timeout=20)
+    if r.returncode != 0:
+        return None, None, "GitHub did not accept that token."
+    try:
+        me = json.loads(r.stdout or "{}")
+    except json.JSONDecodeError:
+        return None, None, "Could not parse GitHub's response."
+    login = me.get("login")
+    if not login:
+        return None, None, "GitHub returned no login for that token."
+    if gh(["api", f"repos/{REPO}"], token=pat, timeout=20).returncode != 0:
+        return None, None, f"That token cannot see {REPO} — it needs the `repo` scope."
+    return login, me.get("name") or "", None
+
+
+# --- sessions ------------------------------------------------------------------------------
+def session_sig(login, exp):
+    return hmac.new(SECRET.encode(), f"session:{login}:{exp}".encode(), sha256).hexdigest()
+
+
+def session_cookie(login):
+    exp = int(time.time()) + SESSION_TTL
+    return (f"prbot_s={login}:{exp}:{session_sig(login, exp)}; Path=/prbot; "
+            f"Max-Age={SESSION_TTL}; HttpOnly; Secure; SameSite=Lax")
+
+
+def clear_session_cookie():
+    return "prbot_s=; Path=/prbot; Max-Age=0; HttpOnly; Secure; SameSite=Lax"
+
+
+def session_user(headers):
+    """The signed-in login, or None. A user removed from users.json is signed out at once."""
+    jar = SimpleCookie(headers.get("Cookie", ""))
+    m = jar.get("prbot_s")
+    if not m:
+        return None
+    parts = m.value.split(":")
+    if len(parts) != 3:
+        return None
+    login, exp, sig = parts
+    try:
+        if int(exp) < time.time():
+            return None
+    except ValueError:
+        return None
+    if not hmac.compare_digest(session_sig(login, exp), sig):
+        return None
+    return login if login in load_users() else None
 
 
 # --- signing ------------------------------------------------------------------------------
@@ -76,9 +194,15 @@ def mint(action, pr, ttl):
 
 
 def link(action, pr, ttl=PAGE_TTL):
+    # Pages are gated by the session cookie, so they get plain, bookmarkable URLs. Only the
+    # actions that change something carry a signed, expiring token.
+    if not action:
+        return "/prbot/"
+    if action == "pr":
+        return f"/prbot/pr?pr={pr}"
     exp, sig = mint(action, pr, ttl)
     q = f"?pr={pr}&exp={exp}&sig={sig}" if pr else f"?exp={exp}&sig={sig}"
-    return f"/prbot/{action}{q}" if action else f"/prbot/{q}"
+    return f"/prbot/{action}{q}"
 
 
 def verify(action, pr, exp, sig):
@@ -98,9 +222,10 @@ def verify(action, pr, exp, sig):
 
 
 # --- github -------------------------------------------------------------------------------
-def gh(args, timeout=45):
+def gh(args, timeout=45, token=None):
+    """Runs gh with the service token, or with a specific user's PAT for writes-as-them."""
     return subprocess.run(["gh", *args], capture_output=True, text=True, timeout=timeout,
-                          env={**os.environ, "GH_TOKEN": PAT})
+                          env={**os.environ, "GH_TOKEN": token or PAT})
 
 
 def gh_json(args, default=None):
@@ -172,16 +297,16 @@ def default_approve_msg(rev):
     return "\n".join(lines)
 
 
-def can_approve(pr):
-    """(ok, why) — may REVIEWER approve this PR?
+def can_approve(pr, login):
+    """(ok, why) — may `login` approve this PR?
 
-    Deliberately NOT "is REVIEWER a requested reviewer": GitHub clears the review request the
+    Deliberately NOT "is `login` a requested reviewer": GitHub clears the review request the
     moment any review is submitted, including a plain comment one. Gating on that made
     post-then-approve structurally impossible. What actually matters is that the PR is open,
-    it is not REVIEWER's own PR (GitHub forbids self-approval), and this box genuinely
-    reviewed it — which, combined with the per-PR HMAC on the link, is the real control.
+    it is not the user's own PR (GitHub forbids self-approval), and this box genuinely
+    reviewed it — which, combined with the signed session and action token, is the control.
     """
-    r = gh(["api", f"repos/{REPO}/pulls/{pr}"])
+    r = gh(["api", f"repos/{REPO}/pulls/{pr}"], token=user_pat(login))
     if r.returncode != 0:
         err = (r.stderr or "unknown error").strip().splitlines()[-1][:250]
         return False, f"GitHub rejected the check: {err}"
@@ -193,7 +318,7 @@ def can_approve(pr):
         return False, "That PR is no longer open."
     if d.get("draft"):
         return False, "That PR is still a draft."
-    if ((d.get("user") or {}).get("login")) == REVIEWER:
+    if ((d.get("user") or {}).get("login")) == login:
         return False, "GitHub does not allow approving your own PR."
     if not (STATE / str(pr) / "review.json").exists():
         return False, "No review has been run for this PR on this box."
@@ -393,13 +518,42 @@ def is_running(pr):
         os.close(fd)
 
 
-def pr_state(pr):
+def udir(pr, login):
+    """Where one user's markers for one PR live. The review itself stays at STATE/<pr>/."""
+    return STATE / str(pr) / "users" / login
+
+
+def upath(pr, login, name):
+    """Read path for a per-user marker.
+
+    Falls back to the legacy per-PR marker for the box owner: before the multi-user layout
+    every marker sat directly in STATE/<pr>/, and all of it was REVIEWER's. Writers always
+    target udir(); only reads consult the legacy spot, so nothing new lands there.
+    """
+    p = udir(pr, login) / name
+    if p.exists():
+        return p
+    legacy = STATE / str(pr) / name
+    if login == REVIEWER and legacy.exists():
+        return legacy
+    return p
+
+
+def touch_user(pr, login, name="opened"):
+    d = udir(pr, login)
+    d.mkdir(parents=True, exist_ok=True)
+    f = d / name
+    if not f.exists():
+        f.write_text(str(int(time.time())))
+
+
+def pr_state(pr, login):
     d = STATE / str(pr)
-    if (d / "archived").exists():
+    if upath(pr, login, "archived").exists():
         return "archived"
-    if (d / "approved").exists():
+    if upath(pr, login, "approved").exists():
         return "approved"
-    if (d / "posted.json").exists():
+    if upath(pr, login, "posted.json").exists():
         return "posted"
     s = (d / "status").read_text().strip() if (d / "status").exists() else ""
     if not s:
@@ -448,14 +602,31 @@ def pr_meta(pr):
     return {"number": pr, "title": f"PR #{pr}"}, False
 
 
-def all_prs():
-    """Queue order first, then anything reviewed earlier that has since left the queue."""
-    live = queue()
+def requested_of(item):
+    """Logins a queue row is awaiting. Rows written before multi-user carry no `requested`
+    and were, by construction, the owner's."""
+    r = item.get("requested")
+    return list(r) if isinstance(r, list) else [REVIEWER]
+
+
+def mine(pr, login):
+    """Has this user touched this PR here — opened, posted, approved or archived it?"""
+    if udir(pr, login).exists():
+        return True
+    if login != REVIEWER:
+        return False
+    d = STATE / str(pr)
+    return any((d / n).exists() for n in ("posted.json", "approved", "archived", "status"))
+
+
+def all_prs(login):
+    """The user's queue first, then anything they touched here that has since left it."""
+    live = [i for i in queue() if login in requested_of(i)]
     seen = {str(i.get("number")) for i in live}
     extra = []
     if STATE.exists():
         for d in STATE.iterdir():
-            if d.is_dir() and d.name.isdigit() and d.name not in seen:
+            if d.is_dir() and d.name.isdigit() and d.name not in seen and mine(d.name, login):
                 extra.append((pr_meta(d.name)[0], False))
     extra.sort(key=lambda m: -int(m[0].get("number", 0)))
     return [(i, True) for i in live] + extra
@@ -497,9 +668,9 @@ def fmt_date(ts):
     return time.strftime("%m/%d/%y", time.localtime(int(ts))) if ts else ""
 
 
-def marker(pr, name):
-    """Read a state marker that may be plain-text (legacy) or JSON. Returns a dict."""
-    f = STATE / str(pr) / name
+def marker(pr, name, login):
+    """Read one user's state marker; plain-text (legacy) or JSON. Returns a dict."""
+    f = upath(pr, login, name)
     if not f.exists():
         return {}
     raw = f.read_text().strip()
@@ -513,14 +684,14 @@ def marker(pr, name):
             return {"at": 0}
 
 
-def pr_times(pr):
-    """Every timestamp we know about a PR, for sorting and display."""
+def pr_times(pr, login):
+    """Every timestamp we know about a PR for this user, for sorting and display."""
     d = STATE / str(pr)
     rev_f = d / "review.json"
     return {
         "reviewed": int(rev_f.stat().st_mtime) if rev_f.exists() else 0,
-        "posted": marker(pr, "posted.json").get("at", 0),
-        "approved": marker(pr, "approved").get("at", 0),
+        "posted": marker(pr, "posted.json", login).get("at", 0),
+        "approved": marker(pr, "approved", login).get("at", 0),
     }
 
 
@@ -547,19 +718,28 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         print(f"{self.address_string()} {fmt % args}", flush=True)
 
-    def reply(self, code, body, ctype="text/html; charset=utf-8"):
+    def reply(self, code, body, ctype="text/html; charset=utf-8", cookie=None):
         raw = body.encode()
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(raw)))
+        if cookie:
+            self.send_header("Set-Cookie", cookie)
         self.end_headers()
         self.wfile.write(raw)
 
-    def redirect(self, to):
+    def redirect(self, to, cookie=None):
         self.send_response(303)
         self.send_header("Location", to)
         self.send_header("Content-Length", "0")
+        if cookie:
+            self.send_header("Set-Cookie", cookie)
         self.end_headers()
+
+    def to_login(self):
+        # Only ever bounce back inside /prbot — an open redirect otherwise.
+        nxt = self.path if self.path.startswith("/prbot/") else "/prbot/"
+        return self.redirect(f"/prbot/login?next={quote(nxt, safe='')}")
 
     def deny(self, msg):
         self.reply(403, shell("Rejected", "<h1>Rejected</h1><div class='banner err'><span>🚫"
@@ -576,34 +756,39 @@ class Handler(BaseHTTPRequestHandler):
 
         if route == "/health":
             return self.reply(200, "ok", "text/plain; charset=utf-8")
+        if route == "/login":
+            return self.login_page((q.get("next") or ["/prbot/"])[0])
+        if route == "/logout":
+            return self.redirect("/prbot/login", cookie=clear_session_cookie())
+
+        user = session_user(self.headers)
+        if not user:
+            return self.to_login()
+        if route == "/settings":
+            return self.settings_page(user)
         if route == "/":
-            err = verify("", "", exp, sig)
-            if err:
-                return self.deny(err)
             tab = (q.get("tab") or ["todo"])[0]
             srt = (q.get("sort") or ["newest"])[0]
-            return self.index_page(tab if tab in dict(TABS) else "todo", srt)
+            return self.index_page(user, tab if tab in dict(TABS) else "todo", srt)
         if not pr.isdigit():
             return self.reply(400, shell("Bad request", "<h1>Missing PR number.</h1>"))
         if route == "/pr":
-            err = verify("pr", pr, exp, sig)
-            return self.deny(err) if err else self.detail_page(pr)
+            return self.detail_page(pr, user)
         if route in ("/archive", "/unarchive"):
             if err := verify(route[1:], pr, exp, sig):
                 return self.deny(err)
-            f = STATE / pr / "archived"
-            STATE.joinpath(pr).mkdir(parents=True, exist_ok=True)
+            f = udir(pr, user) / "archived"
+            f.parent.mkdir(parents=True, exist_ok=True)
             if route == "/archive":
                 f.write_text(str(int(time.time())))
             else:
                 f.unlink(missing_ok=True)
             return self.redirect(link("", ""))
         if route == "/review":
-            # Accept either token: Slack cards carry a "review" token, the dashboard's own
-            # Re-run button carries a "pr" one.
-            if verify("review", pr, exp, sig) and (err := verify("pr", pr, exp, sig)):
+            # Slack cards carry a "review" token; the dashboard's Re-run button mints one too.
+            if err := verify("review", pr, exp, sig):
                 return self.deny(err)
-            return self.start_review(pr, force=True)
+            return self.start_review(pr, user, force=True)
         return self.reply(404, shell("Not found", "<h1>Not found.</h1>"))
 
     # -- POST --------------------------------------------------------------------------------
@@ -612,6 +797,13 @@ class Handler(BaseHTTPRequestHandler):
         form = parse_qs(self.rfile.read(n).decode(), keep_blank_values=True)
         route = urlparse(self.path).path.rstrip("/").removeprefix("/prbot")
         one = lambda k: (form.get(k) or [""])[0]  # noqa: E731
+        if route == "/login":
+            return self.do_login(form)
+        user = session_user(self.headers)
+        if not user:
+            return self.to_login()
+        if route == "/settings":
+            return self.do_settings(user, form)
         pr, exp, sig = one("pr"), one("exp"), one("sig")
         if not pr.isdigit():
             return self.reply(400, shell("Bad request", "<h1>Missing PR number.</h1>"))
@@ -622,23 +814,128 @@ class Handler(BaseHTTPRequestHandler):
         if err := verify(action, pr, exp, sig):
             return self.deny(err)
         if action == "post":
-            return self.do_post_comments(pr, form)
+            return self.do_post_comments(pr, user, form)
         if action == "markdone":
-            (STATE / pr).mkdir(parents=True, exist_ok=True)
-            (STATE / pr / "approved").write_text(json.dumps(
+            d = udir(pr, user)
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "approved").write_text(json.dumps(
                 {"at": int(time.time()), "manual": True,
                  "body": "Handled outside the bot — approved on GitHub directly."}))
             return self.redirect(link("pr", pr))
-        return self.do_approve(pr, form)
+        return self.do_approve(pr, user, form)
+
+    # -- auth pages ----------------------------------------------------------------------------
+    def login_page(self, nxt="/prbot/", banner=""):
+        if not nxt.startswith("/prbot/"):
+            nxt = "/prbot/"
+        body = (
+            "<h1>PR review bot</h1>"
+            f"<p class='muted sm'>Reviewing <code>{html.escape(REPO)}</code></p>" + banner
+            + "<div class=card><form method=post action='/prbot/login'>"
+              "<h4 style='margin-top:0'>Sign in with your GitHub token</h4>"
+              "<p class='muted sm'>A <b>classic</b> personal access token with the "
+              "<code>repo</code> scope — GitHub → Settings → Developer settings → Tokens "
+              "(classic). It is used for exactly one thing: posting the comments and "
+              "approvals <em>you</em> choose, under <em>your</em> name. Stored encrypted on "
+              "this box; never shown again.</p>"
+              "<label class='muted sm'>GitHub token</label>"
+              "<textarea class=short name=pat placeholder='ghp_…' required "
+              "style='min-height:52px'></textarea>"
+              "<label class='muted sm'>Slack member ID <span class=muted>(optional — so "
+              "review requests ping you)</span></label>"
+              "<textarea class=short name=slack_id placeholder='U0123ABCDEF' "
+              "style='min-height:52px'></textarea>"
+              "<p class='muted sm'>Find it in Slack: your profile → ⋮ → <b>Copy member ID</b>."
+              "</p>"
+              f"<input type=hidden name=next value='{html.escape(nxt)}'>"
+              "<p><button class='btn primary' type=submit>Sign in</button></p>"
+              "</form></div>"
+              "<p class='muted sm'>Reviews themselves run on the shared team runner — there "
+              "is nothing to connect for that.</p>")
+        return self.reply(200, shell("Sign in", body))
+
+    def do_login(self, form):
+        one = lambda k: (form.get(k) or [""])[0]  # noqa: E731
+        pat, slack_id, nxt = one("pat").strip(), one("slack_id").strip(), one("next")
+        if not pat:
+            return self.login_page(nxt, "<div class='banner warn'><span>⚠️</span><div>Paste "
+                                        "a token.</div></div>")
+        login, name, err = verify_pat(pat)
+        if err:
+            return self.login_page(nxt, f"<div class='banner err'><span>🚫</span><div>"
+                                        f"{html.escape(err)}</div></div>")
+        users = load_users()
+        prev = users.get(login) or {}
+        users[login] = {"pat_enc": enc(pat), "name": name,
+                        "slack_id": slack_id or prev.get("slack_id", ""),
+                        "added": prev.get("added") or int(time.time()),
+                        "updated": int(time.time())}
+        save_users(users)
+        print(f"login: {login}", flush=True)
+        if not nxt.startswith("/prbot/"):
+            nxt = "/prbot/"
+        return self.redirect(nxt, cookie=session_cookie(login))
+
+    def settings_page(self, user, banner=""):
+        u = load_users().get(user) or {}
+        exp, sig = mint("settings", user, ACTION_TTL)
+        body = (
+            f"<p class=crumb><a href='/prbot/'>← queue</a></p><h1>Settings</h1>"
+            f"<p class='muted sm'>Signed in as <code>{html.escape(user)}</code></p>" + banner
+            + "<div class=card><form method=post action='/prbot/settings'>"
+              "<h4 style='margin-top:0'>Slack</h4>"
+              "<p class='muted sm'>Cards for PRs awaiting your review will @-mention this "
+              "member ID. Your profile → ⋮ → <b>Copy member ID</b>.</p>"
+              f"<textarea class=short name=slack_id style='min-height:52px'>"
+              f"{html.escape(u.get('slack_id', ''))}</textarea>"
+              "<h4>GitHub token</h4>"
+              "<p class='muted sm'>Leave blank to keep the current one. Paste a new token "
+              "to replace it.</p>"
+              "<textarea class=short name=pat placeholder='ghp_… (optional)' "
+              "style='min-height:52px'></textarea>"
+              "<h4>Claude</h4>"
+              "<p class='muted sm'>Reviews run on the shared team runner on this box. "
+              "Nothing to connect.</p>"
+              f"<input type=hidden name=exp value='{exp}'>"
+              f"<input type=hidden name=sig value='{sig}'>"
+              "<p><button class='btn primary' type=submit>Save</button> "
+              "<a class=btn href='/prbot/logout'>Sign out</a></p>"
+              "</form></div>")
+        return self.reply(200, shell("Settings", body))
+
+    def do_settings(self, user, form):
+        one = lambda k: (form.get(k) or [""])[0]  # noqa: E731
+        if err := verify("settings", user, one("exp"), one("sig")):
+            return self.deny(err)
+        users = load_users()
+        u = users.get(user) or {}
+        u["slack_id"] = one("slack_id").strip()
+        pat = one("pat").strip()
+        if pat:
+            login, name, err = verify_pat(pat)
+            if err:
+                return self.settings_page(user, f"<div class='banner err'><span>🚫</span>"
+                                                f"<div>{html.escape(err)}</div></div>")
+            if login != user:
+                return self.settings_page(user, f"<div class='banner err'><span>🚫</span>"
+                                                f"<div>That token belongs to <code>"
+                                                f"{html.escape(login)}</code>, not you.</div>"
+                                                f"</div>")
+            u["pat_enc"], u["name"] = enc(pat), name
+        u["updated"] = int(time.time())
+        users[user] = u
+        save_users(users)
+        return self.settings_page(user, "<div class='banner ok'><span>✓</span><div>Saved."
+                                        "</div></div>")
 
     # -- pages -------------------------------------------------------------------------------
-    def index_page(self, tab="todo", sort="newest"):
+    def index_page(self, user, tab="todo", sort="newest"):
         entries = []
-        for item, active in all_prs():
+        for item, active in all_prs(user):
             num = str(item.get("number"))
-            st = pr_state(num)
+            st = pr_state(num, user)
             rev = load_review(num)
-            t = pr_times(num)
+            t = pr_times(num, user)
             cs = sev_counts(rev.get("comments", [])) if rev else {}
             entries.append({
                 "num": num, "item": item, "active": active, "st": st, "rev": rev,
@@ -666,10 +963,7 @@ class Handler(BaseHTTPRequestHandler):
         shown.sort(key=keys.get(sort, keys["newest"]))
 
         def q(**kw):
-            base = link("", "")
-            for k, v in kw.items():
-                base += f"&{k}={v}"
-            return base
+            return "/prbot/?" + "&".join(f"{k}={v}" for k, v in kw.items())
 
         tabs = "".join(
             f"<a class='tab{' on' if tab == k else ''}' href='{q(tab=k, sort=sort)}'>"
@@ -722,21 +1016,28 @@ class Handler(BaseHTTPRequestHandler):
                  "reviewed": "No reviews waiting to be posted.",
                  "posted": "Nothing posted and unapproved.",
                  "approved": "Nothing approved yet."}.get(tab, "Queue is empty.")
+        slack_ok = bool((load_users().get(user) or {}).get("slack_id"))
         body = (f"<h1>PR review queue</h1>"
-                f"<p class='muted sm'>Reviewing as <code>{REVIEWER}</code>"
+                f"<p class='muted sm'>Reviewing as <code>{html.escape(user)}</code>"
                 + ("" if DRY_RUN else " · <b>live</b> — posting and approving write to GitHub")
+                + " · <a href='/prbot/settings'>settings</a>"
+                  " · <a href='/prbot/logout'>sign out</a>"
                 + f"</p>{dry_banner()}"
-                  f"<div class=tabs>{tabs}</div>"
+                + ("" if slack_ok else
+                   "<div class='banner warn'><span>💬</span><div>No Slack member ID yet — "
+                   "review requests will not ping you. <a href='/prbot/settings'>Add it in "
+                   "settings.</a></div></div>")
+                + f"<div class=tabs>{tabs}</div>"
                   f"<div class=sortbar><span class='muted sm'>Sort</span>{sorts}</div>"
                   f"<div class=list>"
                 + ("".join(rows) or f"<div class='rowlink muted'>{empty}</div>")
                 + "</div>")
         return self.reply(200, shell("PR review queue", body))
 
-    def timeline(self, pr):
+    def timeline(self, pr, user):
         """reviewed → posted → approved, with dates. Reads at a glance where a PR stands."""
-        t = pr_times(pr)
-        posted = marker(pr, "posted.json")
+        t = pr_times(pr, user)
+        posted = marker(pr, "posted.json", user)
         steps = [
             ("Reviewed", t["reviewed"], ago(t["reviewed"])),
             ("Comments posted", t["posted"],
@@ -752,8 +1053,10 @@ class Handler(BaseHTTPRequestHandler):
                        + "</span>")
         return f"<div class=timeline>{''.join(out)}</div>"
 
-    def detail_page(self, pr, banner=""):
-        st = pr_state(pr)
+    def detail_page(self, pr, user, banner=""):
+        # Opening a PR here is what keeps it in your list after it leaves the live queue.
+        touch_user(pr, user)
+        st = pr_state(pr, user)
         meta, active = pr_meta(pr)
         title = meta.get("title", f"PR #{pr}")
         ghurl = meta.get("url", f"https://github.com/{REPO}/pull/{pr}")
@@ -767,8 +1070,9 @@ class Handler(BaseHTTPRequestHandler):
                 + (pill("dry", "dry run") if DRY_RUN else "")
                 + f"<span>{html.escape(meta.get('author', ''))}{size}</span>"
                   f"<span>·</span><a href='{ghurl}'>open on GitHub</a>"
-                + ("" if active else "<span>· no longer awaiting your review</span>")
-                + "</div>" + self.timeline(pr) + banner)
+                + ("" if active and user in requested_of(meta)
+                   else "<span>· not awaiting your review</span>")
+                + "</div>" + self.timeline(pr, user) + banner)
 
         if st == "stalled":
             was = (STATE / pr / "status").read_text().strip()
@@ -798,17 +1102,18 @@ class Handler(BaseHTTPRequestHandler):
                 s = (STATE / pr / "status").read_text().strip()
                 note = (f"<div class='banner err'><span>🔴</span><div>{html.escape(s)}</div>"
                         f"</div>")
-            approved = (self.approved_card(pr) if marker(pr, "approved").get("at") else "")
+            approved = (self.approved_card(pr, user)
+                        if marker(pr, "approved", user).get("at") else "")
             body = (f"<div class=card><h4>Not reviewed here</h4>"
                     f"<p class='muted sm'>No review has been run for this PR on this box.</p>"
                     f"<p><a class='btn primary' href='{link('review', pr)}'>Run review</a></p>"
                     f"</div>") if not approved else approved
             return self.reply(200, shell(f"#{pr}",
-                                         head + note + body + self.footer_actions(pr)))
+                                         head + note + body + self.footer_actions(pr, user)))
 
-        return self.reply(200, shell(f"#{pr}", head + self.review_body(pr, rev)))
+        return self.reply(200, shell(f"#{pr}", head + self.review_body(pr, rev, user)))
 
-    def review_body(self, pr, rev):
+    def review_body(self, pr, rev, user):
         ev = rev.get("event", "COMMENT")
         comments = sorted(rev.get("comments", []),
                           key=lambda c: SEV_ORDER.get(c.get("severity"), 9))
@@ -864,9 +1169,10 @@ class Handler(BaseHTTPRequestHandler):
                 f"<input type=hidden name='sev_{i}' value='{html.escape(sev)}'>"
                 f"</div></div>")
 
-        posted = (STATE / pr / "posted.json").exists()
-        posted_note = ("<div class='banner ok'><span>✓</span><div>Already posted to GitHub. "
-                       "Posting again adds a second review.</div></div>" if posted else "")
+        posted = upath(pr, user, "posted.json").exists()
+        posted_note = ("<div class='banner ok'><span>✓</span><div>You already posted this to "
+                       "GitHub. Posting again adds a second review.</div></div>"
+                       if posted else "")
         label = "Post selected" + (" (dry run)" if DRY_RUN else " to GitHub")
         parts.append(
             f"<form method=post action='/prbot/post'>{posted_note}"
@@ -884,9 +1190,9 @@ class Handler(BaseHTTPRequestHandler):
               f"</div></div></form>")
 
         # --- approve -----------------------------------------------------------------
-        if marker(pr, "approved").get("at"):
-            parts.append(self.approved_card(pr))
-            parts.append(self.footer_actions(pr))
+        if marker(pr, "approved", user).get("at"):
+            parts.append(self.approved_card(pr, user))
+            parts.append(self.footer_actions(pr, user))
             return "".join(parts)
 
         lgtm = blockers == 0 and ev != "REQUEST_CHANGES"
@@ -913,23 +1219,23 @@ class Handler(BaseHTTPRequestHandler):
             f"<input type=hidden name=exp value='{exp_a}'>"
             f"<input type=hidden name=sig value='{sig_a}'>"
             f"<p><button class='btn warn' type=submit>"
-            + ("Approve (dry run)" if DRY_RUN else f"Approve #{pr} as {REVIEWER}")
+            + ("Approve (dry run)" if DRY_RUN else f"Approve #{pr} as {html.escape(user)}")
             + "</button></p></form>"
               "<p class='muted sm'>Checks the PR is open, is not yours, and was reviewed "
               "here. This token lasts 30 minutes — reload if it lapses.</p>"
               "</div>")
-        parts.append(self.footer_actions(pr))
+        parts.append(self.footer_actions(pr, user))
         return "".join(parts)
 
-    def approved_card(self, pr):
-        appr = marker(pr, "approved")
+    def approved_card(self, pr, user):
+        appr = marker(pr, "approved", user)
         said = appr.get("body", "")
         manual = appr.get("manual")
         return (f"<h2>Approved</h2><div class=card>"
                 f"<div class='banner ok'><span>✅</span><div><b>"
                 + ("Marked as approved" if manual else "Approved")
                 + f" on {fmt_date(appr['at'])}</b> ({ago(appr['at'])})"
-                + ("" if manual else f" as <code>{REVIEWER}</code>")
+                + ("" if manual else f" as <code>{html.escape(user)}</code>")
                 + ("<br>Recorded here only — the approval itself was done on GitHub."
                    if manual else "") + "</div></div>"
                 + (f"<p class='muted sm'>Comment posted with the approval:</p>"
@@ -937,10 +1243,10 @@ class Handler(BaseHTTPRequestHandler):
                    if said and not manual else "")
                 + f"<p><a class=btn href='{ghurl_of(pr)}'>View on GitHub</a></p></div>")
 
-    def footer_actions(self, pr):
+    def footer_actions(self, pr, user):
         """Local-only housekeeping: never touches GitHub."""
         exp_m, sig_m = mint("markdone", pr, ACTION_TTL)
-        st = pr_state(pr)
+        st = pr_state(pr, user)
         marked = ""
         if st != "approved":
             marked = (
@@ -955,9 +1261,10 @@ class Handler(BaseHTTPRequestHandler):
                 f"<a class=btn href='{link('archive', pr)}'>Archive</a></p></div>")
 
     # -- actions -----------------------------------------------------------------------------
-    def start_review(self, pr, force=False):
+    def start_review(self, pr, user, force=False):
         d = STATE / pr
         d.mkdir(parents=True, exist_ok=True)
+        touch_user(pr, user)
         cur = (d / "status").read_text().strip() if (d / "status").exists() else ""
         idle = not cur or cur.startswith(("done", "posted", "dry-run", "failed"))
         if idle and (force or not cur):
@@ -967,7 +1274,7 @@ class Handler(BaseHTTPRequestHandler):
                                  stderr=subprocess.STDOUT, start_new_session=True)
         return self.redirect(link("pr", pr))
 
-    def do_post_comments(self, pr, form):
+    def do_post_comments(self, pr, user, form):
         one = lambda k: (form.get(k) or [""])[0]  # noqa: E731
         rev = load_review(pr) or {}
         chosen = []
@@ -980,14 +1287,14 @@ class Handler(BaseHTTPRequestHandler):
                            "severity": one(f"sev_{i}"),
                            "body": one(f"body_{i}").strip()})
         if not chosen:
-            return self.detail_page(pr, "<div class='banner warn'><span>⚠️</span><div>Nothing "
-                                        "selected — nothing sent.</div></div>")
+            return self.detail_page(pr, user, "<div class='banner warn'><span>⚠️</span><div>"
+                                              "Nothing selected — nothing sent.</div></div>")
 
         # Re-validate anchors against the CURRENT diff: the PR may have gained commits while
         # this review sat in the dashboard, and one stale line 422s the whole review.
         files, err = fetch_pr_files(pr)
         if err is not None:
-            return self.detail_page(pr, (
+            return self.detail_page(pr, user, (
                 f"<div class='banner err'><span>🔴</span><div><b>Could not fetch the PR diff "
                 f"from GitHub — nothing was posted.</b><br>Without it every comment would be "
                 f"demoted out of the diff and posted as a plain summary, so this refuses "
@@ -1002,62 +1309,81 @@ class Handler(BaseHTTPRequestHandler):
         # verdict; these are review notes, and the human approves separately.
         event = "COMMENT"
         payload = {"body": body, "event": event, "comments": inline}
-        (STATE / pr / "payload.json").write_text(json.dumps(payload))
+        ud = udir(pr, user)
+        ud.mkdir(parents=True, exist_ok=True)
+        (ud / "payload.json").write_text(json.dumps(payload))
 
         if DRY_RUN:
-            return self.detail_page(pr, (
+            return self.detail_page(pr, user, (
                 f"<div class='banner warn'><span>🧪</span><div><b>DRY RUN — nothing was sent "
                 f"to GitHub.</b><br>Would post {len(inline)} inline comment(s)"
                 + (f", {len(orphans)} folded into the summary" if orphans else "")
                 + f", as <code>{event}</code>. Set <code>DRY_RUN=0</code> and restart "
                   f"<code>prbot</code> to post for real.</div></div>"))
 
+        tok = user_pat(user)
+        if not tok:
+            return self.detail_page(pr, user, "<div class='banner err'><span>🚫</span><div>"
+                                              "Your stored GitHub token could not be read — "
+                                              "paste it again in <a href='/prbot/settings'>"
+                                              "settings</a>.</div></div>")
         r = gh(["api", "--method", "POST", f"repos/{REPO}/pulls/{pr}/reviews",
-                "--input", str(STATE / pr / "payload.json")])
+                "--input", str(ud / "payload.json")], token=tok)
         if r.returncode != 0:
-            return self.detail_page(pr, f"<div class='banner err'><span>🔴</span><div>GitHub "
-                                        f"rejected it: <code>"
-                                        f"{html.escape(r.stderr[:400])}</code></div></div>")
-        (STATE / pr / "posted.json").write_text(
+            return self.detail_page(pr, user, f"<div class='banner err'><span>🔴</span><div>"
+                                              f"GitHub rejected it: <code>"
+                                              f"{html.escape(r.stderr[:400])}</code></div></div>")
+        (ud / "posted.json").write_text(
             json.dumps({"at": int(time.time()), "inline": len(inline), "event": event}))
-        return self.detail_page(pr, (
+        return self.detail_page(pr, user, (
             f"<div class='banner ok'><span>✓</span><div>Posted {len(inline)} comment(s) as "
-            f"<code>{event}</code> under <code>{REVIEWER}</code>."
+            f"<code>{event}</code> under <code>{html.escape(user)}</code>."
             + (f" {len(orphans)} could not be anchored and went into the summary."
                if orphans else "") + "</div></div>"))
 
-    def do_approve(self, pr, form):
+    def do_approve(self, pr, user, form):
         one = lambda k: (form.get(k) or [""])[0]  # noqa: E731
         rev = load_review(pr) or {}
         blockers = sev_counts(rev.get("comments", [])).get("blocker", 0)
         lgtm = blockers == 0 and rev.get("event") != "REQUEST_CHANGES"
         if not lgtm and not one("ack"):
-            return self.detail_page(pr, "<div class='banner warn'><span>⚠️</span><div>This "
-                                        "review is not LGTM — tick the confirmation to "
-                                        "approve anyway.</div></div>")
+            return self.detail_page(pr, user, "<div class='banner warn'><span>⚠️</span><div>"
+                                              "This review is not LGTM — tick the "
+                                              "confirmation to approve anyway.</div></div>")
         msg = one("approve_body").strip() or "LGTM."
-        ok, why = can_approve(pr)
+        tok = user_pat(user)
+        if not tok:
+            return self.detail_page(pr, user, "<div class='banner err'><span>🚫</span><div>"
+                                              "Your stored GitHub token could not be read — "
+                                              "paste it again in <a href='/prbot/settings'>"
+                                              "settings</a>.</div></div>")
+        ok, why = can_approve(pr, user)
         if not ok:
-            return self.detail_page(pr, f"<div class='banner err'><span>🚫</span><div>"
-                                        f"{html.escape(why)}</div></div>")
+            return self.detail_page(pr, user, f"<div class='banner err'><span>🚫</span><div>"
+                                              f"{html.escape(why)}</div></div>")
         if DRY_RUN:
-            return self.detail_page(pr, (
+            return self.detail_page(pr, user, (
                 f"<div class='banner warn'><span>🧪</span><div><b>DRY RUN — not approved.</b>"
-                f"<br>Would submit an APPROVE review as <code>{REVIEWER}</code> with body: "
-                f"<em>{html.escape(msg[:200])}</em></div></div>"))
+                f"<br>Would submit an APPROVE review as <code>{html.escape(user)}</code> with "
+                f"body: <em>{html.escape(msg[:200])}</em></div></div>"))
         r = gh(["api", "--method", "POST", f"repos/{REPO}/pulls/{pr}/reviews",
-                "-f", "event=APPROVE", "-f", f"body={msg}"])
+                "-f", "event=APPROVE", "-f", f"body={msg}"], token=tok)
         if r.returncode != 0:
-            return self.detail_page(pr, f"<div class='banner err'><span>🔴</span><div>GitHub "
-                                        f"rejected it: <code>"
-                                        f"{html.escape(r.stderr[:400])}</code></div></div>")
-        (STATE / pr / "approved").write_text(
-            json.dumps({"at": int(time.time()), "body": msg}))
-        return self.detail_page(pr, f"<div class='banner ok'><span>✅</span><div>Approved #{pr}"
-                                    f" as <code>{REVIEWER}</code>.</div></div>")
+            return self.detail_page(pr, user, f"<div class='banner err'><span>🔴</span><div>"
+                                              f"GitHub rejected it: <code>"
+                                              f"{html.escape(r.stderr[:400])}</code></div></div>")
+        ud = udir(pr, user)
+        ud.mkdir(parents=True, exist_ok=True)
+        (ud / "approved").write_text(json.dumps({"at": int(time.time()), "body": msg}))
+        return self.detail_page(pr, user, f"<div class='banner ok'><span>✅</span><div>Approved "
+                                          f"#{pr} as <code>{html.escape(user)}</code>."
+                                          f"</div></div>")
 
 
 if __name__ == "__main__":
     port = int(os.environ.get("PRBOT_PORT", "8899"))
-    print(f"prbot listening on 127.0.0.1:{port} (dry_run={DRY_RUN})", flush=True)
+    if USERS.exists():
+        os.chmod(USERS, 0o600)
+    print(f"prbot listening on 127.0.0.1:{port} (dry_run={DRY_RUN}, "
+          f"users={len(load_users())})", flush=True)
     ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
