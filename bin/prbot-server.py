@@ -947,6 +947,35 @@ width:2px;height:calc(100% - 8px);background:linear-gradient(var(--line),transpa
 .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:14px 0}
 .mini{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:15px 17px}
 .mini .t{font-weight:600;margin-bottom:4px;display:flex;align-items:center;gap:8px}
+/* sign-in screen */
+.auth{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px 18px;
+background-image:radial-gradient(720px 360px at 50% -60px,rgba(168,85,247,.16),transparent 68%),
+radial-gradient(620px 320px at 50% 120%,rgba(91,124,250,.12),transparent 70%)}
+.authcard{width:100%;max-width:428px;background:linear-gradient(180deg,var(--panel2),var(--panel));
+border:1px solid var(--line);border-radius:22px;padding:40px 34px 30px;text-align:center;
+box-shadow:0 32px 90px -34px rgba(0,0,0,.85),0 0 0 1px rgba(168,85,247,.05);
+animation:rise .55s cubic-bezier(.2,.7,.2,1) both}
+.authlogo{width:66px;height:66px;margin:0 auto 16px;display:block;
+filter:drop-shadow(0 8px 22px rgba(168,85,247,.45))}
+.authcard h1{font-size:1.9rem;letter-spacing:-.02em;margin:0;background:var(--grad);
+-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.authsub{color:var(--fg);font-size:.98rem;font-weight:550;margin:6px 0 0}
+.authlead{color:var(--dim);font-size:.9rem;line-height:1.6;margin:16px 0 24px}
+.authcard form{margin:0}
+.authcard .btn.soft.block{margin-top:2px}
+.authhint{text-align:center;margin:10px 0 18px}
+.tokfield{position:relative;margin-top:4px}
+.tokfield input{width:100%;padding:13px 62px 13px 14px;text-align:center;letter-spacing:.02em}
+.tokfield input::placeholder{text-align:center}
+.peek{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:0;
+color:var(--dim);font-size:.8rem;font-weight:600;cursor:pointer;padding:6px 10px;border-radius:8px}
+.peek:hover{color:var(--fg);background:var(--panel2)}
+.authfine{font-size:.78rem;color:var(--faint);margin:20px 0 0;line-height:1.5}
+.authcard .hint#pathint{text-align:center;margin:9px 0 2px}
+/* soft (borderless) button — used on the sign-in screen */
+.btn.soft{background:var(--panel2);border-color:transparent;color:var(--fg)}
+.btn.soft:hover{background:#20243a;border-color:transparent}
+.btn.block{width:100%;justify-content:center;margin-top:6px}
 /* animation */
 @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -1042,7 +1071,7 @@ def sidebar(user, active):
             f"<a class=so href='/prbot/logout'>Sign out</a></div></aside>")
 
 
-def shell(title, body, refresh=None, user=None, active=None):
+def shell(title, body, refresh=None, user=None, active=None, auth=False):
     r = f'<meta http-equiv=refresh content="8;url={refresh}">' if refresh else ""
     head = (f"<!doctype html><html lang=en><head><meta charset=utf-8>"
             f"<meta name=viewport content='width=device-width,initial-scale=1'>"
@@ -1053,10 +1082,12 @@ def shell(title, body, refresh=None, user=None, active=None):
             f"<link rel=stylesheet href='https://fonts.googleapis.com/css2?"
             f"family=Inter:wght@400;500;600;700&display=swap'>"
             f"{r}<style>{CSS}</style></head><body>")
-    if user:                                    # signed-in pages get the sidebar app-shell
+    if auth:                                    # sign-in: full-page centered card, no chrome
+        inner = body
+    elif user:                                  # signed-in pages get the sidebar app-shell
         inner = (f"<div class=app>{sidebar(user, active)}"
                  f"<main class=main><div class=wrap>{body}</div></main></div>")
-    else:                                       # login / errors: bare centered layout
+    else:                                       # error pages: bare centered layout
         inner = (f"<div class=topbar><a class=brand href='/prbot/'>"
                  f"<img src='{prbot_assets.LOGO}' alt=''>"
                  f"<span class=n>{html.escape(BRAND)}</span>"
@@ -1484,54 +1515,32 @@ class Handler(BaseHTTPRequestHandler):
         # GitHub's new-token page accepts the scope and name in the URL, so the person only
         # has to pick an expiry and click Generate — no hunting for the right checkbox.
         new_tok = "https://github.com/settings/tokens/new?" + urlencode(
-            {"scopes": "repo", "description": f"PR review bot ({ENV.get('PRBOT_ENV', 'prbot')})"})
-        github = ""
-        if OAUTH_ENABLED and oauth_blocked():
-            github = (
-                "<div class='card ghwait' style='margin-bottom:14px'><div class=meta>"
-                "<span class='pill archived'>awaiting org approval</span></div>"
-                "<p class='muted sm' style='margin:8px 0 0'><b>Sign in with GitHub</b> is set "
-                "up but an org owner has not approved the app yet. Use a token below — it "
-                "takes about a minute — and the button will work for everyone once they do."
-                "</p></div>")
-        elif OAUTH_ENABLED:
-            github = (
-                "<div class=card style='margin-bottom:14px'>"
-                f"<p style='margin:0 0 10px'><a class='btn primary' "
-                f"href='/prbot/oauth/start?next={quote(nxt, safe='')}'>Sign in with GitHub</a></p>"
-                "<p class='muted sm' style='margin:0'>One click. GitHub issues a short-lived "
-                "token that acts as you; nothing to paste.</p></div>"
-                "<p class='muted sm' style='text-align:center;margin:10px 0'>or</p>")
+            {"scopes": "repo", "description": f"Robin ({ENV.get('PRBOT_ENV', 'prbot')})"})
         body = (
-            f"<h1>Sign in to {html.escape(BRAND)}</h1>"
-            "<p class=lead>Your PR reviews, drafted and ready. Every comment and approval you "
-            "post goes out under your own GitHub name — nothing is ever posted for you.</p>"
-            + banner + github
-            + "<div class=card>"
-              "<h4 style='margin-top:0'>Sign in with a token</h4>"
-              "<ol class=steps>"
-              "<li><h5>Create a token on GitHub</h5>"
-              f"<p style='margin:0'><a class=btn target=_blank rel=noopener href='{new_tok}'>"
-              "Create token on GitHub ↗</a></p>"
-              "<div class=hint>Opens GitHub with everything pre-filled (scope <code>repo</code>, "
-              "name <em>PR review bot</em>). Pick an expiry — 90 days is fine — click "
-              "<b>Generate token</b>, and copy it.</div></li>"
-              "<li><h5>Paste it here</h5>"
+            "<div class=auth><div class=authcard>"
+            f"<img class=authlogo src='{prbot_assets.LOGO}' alt=''>"
+            f"<h1>{html.escape(BRAND)}</h1>"
+            "<p class=authsub>Your PR reviewer for Cut &amp; Dry</p>"
+            "<p class=authlead>Sign in with a GitHub token. Every comment and approval posts "
+            "under your own name — nothing is ever posted for you.</p>"
+            + banner
+            + f"<a class='btn soft block' target=_blank rel=noopener href='{new_tok}'>"
+              "Create a token on GitHub ↗</a>"
+              "<div class='hint authhint'>Opens GitHub with the <code>repo</code> scope "
+              "pre-filled — pick an expiry, <b>Generate token</b>, copy it.</div>"
               "<form method=post action='/prbot/login'>"
-              "<div class=field><input type=password id=pat name=pat placeholder='ghp_…' "
+              "<div class=tokfield><input type=password id=pat name=pat placeholder='ghp_…' "
               "autocomplete=off spellcheck=false autofocus required>"
-              "<button type=button class='btn ghost sm' onclick=\"peek('pat',this)\">show"
-              "</button></div>"
-              "<div class=hint id=pathint></div>"
+              "<button type=button class=peek onclick=\"peek('pat',this)\">show</button></div>"
+              "<div class='hint' id=pathint></div>"
               f"<input type=hidden name=next value='{html.escape(nxt)}'>"
-              "<p style='margin:12px 0 0'><button class='btn primary' id=go type=submit "
-              "data-busy='Checking with GitHub…' disabled>Sign in</button></p>"
-              "</form></li></ol>"
-              "<p class=fine>Stored encrypted on this box and used for one thing: posting the "
-              "comments and approvals you tick. Revoke it any time at "
-              "github.com/settings/tokens.</p>"
-              "</div>")
-        return self.reply(200, shell("Sign in", body))
+              "<button class='btn primary block' id=go type=submit "
+              "data-busy='Signing in…' disabled>Sign in</button>"
+              "</form>"
+              "<p class=authfine>Stored encrypted on this box, used only to post the comments "
+              "and approvals you pick. Revoke it any time on GitHub.</p>"
+              "</div></div>")
+        return self.reply(200, shell("Sign in", body, auth=True))
 
     def do_login(self, form):
         one = lambda k: (form.get(k) or [""])[0]  # noqa: E731
