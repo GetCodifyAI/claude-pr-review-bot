@@ -884,6 +884,68 @@ justify-content:center;font-size:.78rem;font-weight:700;border:1px solid var(--l
 .ck .t{flex:1}.ck .t b{display:block;color:var(--fg);font-weight:600}
 .ck .t span{color:var(--dim);font-size:.85rem}
 .ghwait{opacity:.72}
+/* app shell (sidebar) */
+.app{display:flex;min-height:100vh;align-items:stretch}
+.app::before{content:"";position:fixed;left:0;right:0;top:0;height:2px;background:var(--grad);z-index:40}
+.side{width:242px;flex:none;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;
+padding:18px 14px;border-right:1px solid var(--hair);background:rgba(12,14,20,.55);gap:4px}
+.side .brand{padding:8px 8px 16px}
+.nav{display:flex;flex-direction:column;gap:3px;margin-top:4px}
+.ni{display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:10px;color:var(--dim);
+font-size:.92rem;font-weight:500;transition:background .14s,color .14s}
+.ni svg{width:18px;height:18px;flex:none}
+.ni:hover{background:var(--panel);color:var(--fg)}
+.ni.on{color:var(--fg);background:linear-gradient(90deg,rgba(168,85,247,.16),rgba(91,124,250,.04));
+font-weight:600}.ni.on svg{color:var(--purple)}
+.sidefoot{margin-top:auto;display:flex;flex-direction:column;gap:10px;padding:14px 8px 2px;
+border-top:1px solid var(--hair)}
+.sidefoot .who{display:flex;align-items:center;gap:9px;color:var(--fg);font-weight:550;font-size:.9rem}
+.sidefoot .av{width:26px;height:26px;border-radius:50%;background:var(--grad);color:#fff;flex:none;
+display:inline-flex;align-items:center;justify-content:center;font-size:.78rem;font-weight:700}
+.sidefoot .live{align-self:flex-start;font-size:.66rem;font-weight:700;letter-spacing:.05em;
+text-transform:uppercase;padding:3px 9px;border-radius:999px}
+.sidefoot .live.on{background:var(--okbg);color:#6fe6b2;border:1px solid var(--okln)}
+.sidefoot .live.dry{background:var(--warnbg);color:#f6cd8a;border:1px solid var(--warnln)}
+.sidefoot .so{color:var(--dim);font-size:.86rem}.sidefoot .so:hover{color:var(--fg)}
+.main{flex:1;min-width:0}
+.main .wrap{padding:34px 36px 0;max-width:58rem;margin:0}
+.main .bar{left:242px}.main .bar .inner{max-width:58rem}
+@media(max-width:820px){.app{flex-direction:column}.app::before{position:sticky}
+.side{width:auto;height:auto;flex-direction:row;align-items:center;padding:9px 14px;gap:8px;z-index:30;
+background:rgba(10,11,18,.85);backdrop-filter:saturate(140%) blur(14px)}
+.side .brand{padding:0 4px 0 0}.nav{flex-direction:row;margin:0;gap:2px}.ni span{display:none}.ni{padding:8px}
+.sidefoot{margin:0 0 0 auto;flex-direction:row;align-items:center;border-top:0;padding:0;gap:10px}
+.sidefoot .nm,.sidefoot .live{display:none}.main .wrap{padding:22px 16px 0}.main .bar{left:0}}
+/* integration cards */
+.intg{display:flex;gap:15px;align-items:flex-start;padding:20px 22px;border:1px solid var(--line);
+border-radius:var(--r);background:var(--panel);box-shadow:var(--shadow);margin:14px 0;
+animation:rise .5s cubic-bezier(.2,.7,.2,1) both}
+.intg .ico{width:44px;height:44px;border-radius:12px;flex:none;display:flex;align-items:center;
+justify-content:center;background:var(--panel2);border:1px solid var(--line);font-size:1.3rem}
+.intg .bd{flex:1;min-width:0}
+.intg .hd{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.intg h4{margin:0;font-size:1.05rem}
+.tag-on{font-size:.68rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:3px 9px;
+border-radius:999px;background:var(--okbg);color:#6fe6b2;border:1px solid var(--okln)}
+.tag-off{font-size:.68rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:3px 9px;
+border-radius:999px;background:var(--panel2);color:var(--faint);border:1px solid var(--line)}
+/* how-it-works */
+.flow{display:flex;flex-direction:column;gap:0;margin:10px 0 8px}
+.fstep{display:flex;gap:16px;padding:0 0 26px}
+.fstep:last-child{padding-bottom:0}
+.fstep .fn{width:34px;height:34px;border-radius:999px;flex:none;background:var(--grad);color:#fff;
+display:flex;align-items:center;justify-content:center;font-weight:700;position:relative;
+box-shadow:0 4px 12px -4px rgba(168,85,247,.6)}
+.fstep:not(:last-child) .fn::after{content:"";position:absolute;top:34px;left:50%;transform:translateX(-50%);
+width:2px;height:calc(100% - 8px);background:linear-gradient(var(--line),transparent)}
+.fstep .fb{flex:1;padding-top:4px}.fstep .fb h4{margin:0 0 5px}
+.shot{margin:12px 0 0;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel2)}
+.shot img{display:block;width:100%}
+.shot .cap{padding:8px 12px;font-size:.8rem;color:var(--faint);border-top:1px solid var(--line2)}
+.shot.ph{padding:22px;text-align:center;color:var(--faint);font-size:.85rem;border-style:dashed}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:14px 0}
+.mini{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:15px 17px}
+.mini .t{font-weight:600;margin-bottom:4px;display:flex;align-items:center;gap:8px}
 /* animation */
 @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -941,14 +1003,43 @@ document.addEventListener('DOMContentLoaded',function(){tokcheck();slackcheck();
 """
 
 
-def shell(title, body, refresh=None, nav=""):
+NAV_ICONS = {
+    "queue": "<svg viewBox='0 0 24 24' fill=none stroke=currentColor stroke-width=1.8 "
+             "stroke-linecap=round stroke-linejoin=round><path d='M3 5h18M3 12h18M3 19h11'/>"
+             "</svg>",
+    "integrations": "<svg viewBox='0 0 24 24' fill=none stroke=currentColor stroke-width=1.8 "
+                    "stroke-linejoin=round><rect x='3' y='3' width='7' height='7' rx='1.5'/>"
+                    "<rect x='14' y='3' width='7' height='7' rx='1.5'/>"
+                    "<rect x='14' y='14' width='7' height='7' rx='1.5'/>"
+                    "<rect x='3' y='14' width='7' height='7' rx='1.5'/></svg>",
+    "how": "<svg viewBox='0 0 24 24' fill=none stroke=currentColor stroke-width=1.8 "
+           "stroke-linecap=round stroke-linejoin=round><circle cx='12' cy='12' r='9'/>"
+           "<path d='M9.6 9.2a2.5 2.5 0 1 1 3.4 2.3c-.8.5-1 .9-1 1.7M12 17h.01'/></svg>",
+}
+
+
+def sidebar(user, active):
+    items = [("queue", "Queue", "/prbot/"),
+             ("integrations", "Integrations", "/prbot/integrations"),
+             ("how", "How it works", "/prbot/how")]
+    nav = "".join(
+        f"<a class='ni{' on' if active == k else ''}' href='{href}'>{NAV_ICONS[k]}"
+        f"<span>{label}</span></a>" for k, label, href in items)
+    av = html.escape((user[:1] or "?").upper())
+    return (f"<aside class=side><a class=brand href='/prbot/'>"
+            f"<img src='{prbot_assets.LOGO}' alt=''><span class=n>{html.escape(BRAND)}</span></a>"
+            f"<nav class=nav>{nav}</nav>"
+            f"<div class=sidefoot>"
+            f"<span class='live {'dry' if DRY_RUN else 'on'}'>"
+            + ("dry run" if DRY_RUN else "live") + "</span>"
+            f"<div class=who><span class=av>{av}</span>"
+            f"<span class=nm>{html.escape(user)}</span></div>"
+            f"<a class=so href='/prbot/logout'>Sign out</a></div></aside>")
+
+
+def shell(title, body, refresh=None, user=None, active=None):
     r = f'<meta http-equiv=refresh content="8;url={refresh}">' if refresh else ""
-    topbar = (f"<div class=topbar><a class=brand href='/prbot/'>"
-              f"<img src='{prbot_assets.LOGO}' alt=''>"
-              f"<span class=n>{html.escape(BRAND)}</span>"
-              f"<span class=tag>PR review</span></a>"
-              f"<div class=navr>{nav}</div></div>")
-    return (f"<!doctype html><html lang=en><head><meta charset=utf-8>"
+    head = (f"<!doctype html><html lang=en><head><meta charset=utf-8>"
             f"<meta name=viewport content='width=device-width,initial-scale=1'>"
             f"<title>{html.escape(title)} · {html.escape(BRAND)}</title>"
             f"<link rel=icon href='{prbot_assets.FAVICON}'>"
@@ -956,8 +1047,17 @@ def shell(title, body, refresh=None, nav=""):
             f"<link rel=preconnect href='https://fonts.gstatic.com' crossorigin>"
             f"<link rel=stylesheet href='https://fonts.googleapis.com/css2?"
             f"family=Inter:wght@400;500;600;700&display=swap'>"
-            f"{r}<style>{CSS}</style></head><body>"
-            f"{topbar}<div class=wrap>{body}</div><script>{JS}</script></body></html>")
+            f"{r}<style>{CSS}</style></head><body>")
+    if user:                                    # signed-in pages get the sidebar app-shell
+        inner = (f"<div class=app>{sidebar(user, active)}"
+                 f"<main class=main><div class=wrap>{body}</div></main></div>")
+    else:                                       # login / errors: bare centered layout
+        inner = (f"<div class=topbar><a class=brand href='/prbot/'>"
+                 f"<img src='{prbot_assets.LOGO}' alt=''>"
+                 f"<span class=n>{html.escape(BRAND)}</span>"
+                 f"<span class=tag>PR review</span></a></div>"
+                 f"<div class=wrap>{body}</div>")
+    return head + inner + f"<script>{JS}</script></body></html>"
 
 
 def pill(kind, text=None):
@@ -1269,9 +1369,11 @@ class Handler(BaseHTTPRequestHandler):
         user = session_user(self.headers)
         if not user:
             return self.to_login()
-        if route == "/settings":
+        if route in ("/settings", "/integrations"):
             return self.settings_page(user, welcome=bool((q.get("welcome") or [""])[0]),
                                       nxt=(q.get("next") or ["/prbot/"])[0])
+        if route == "/how":
+            return self.how_page(user)
         if route == "/":
             tab = (q.get("tab") or ["todo"])[0]
             srt = (q.get("sort") or ["newest"])[0]
@@ -1308,7 +1410,7 @@ class Handler(BaseHTTPRequestHandler):
         user = session_user(self.headers)
         if not user:
             return self.to_login()
-        if route == "/settings":
+        if route in ("/settings", "/integrations"):
             return self.do_settings(user, form)
         if route in ("/claude/start", "/claude/code", "/claude/cancel"):
             return self.do_claude_connect(user, route.rsplit("/", 1)[1], form)
@@ -1474,53 +1576,143 @@ class Handler(BaseHTTPRequestHandler):
                      + "</div>")
 
         claude_inner, claude_aux = self.claude_section(user, u, exp, sig, welcome, nxt)
+        hidden = (f"<input type=hidden name=exp value='{exp}'>"
+                  f"<input type=hidden name=sig value='{sig}'>"
+                  f"<input type=hidden name=welcome value='{'1' if welcome else ''}'>"
+                  f"<input type=hidden name=next value='{html.escape(nxt)}'>")
+
+        # --- onboarding (first sign-in) keeps the focused checklist + numbered steps ---------
         if welcome:
             head = (f"<h1>You're in, {html.escape(u.get('name') or user)}.</h1>"
                     "<p class=lead>Two more things make this work well. The first takes ten "
                     "seconds; the second is optional.</p>")
-            done_link = (f"<a class=btn href='{html.escape(nxt)}'>Skip for now → queue</a>")
-        else:
-            head = (f"<p class=crumb><a href='/prbot/'>← queue</a></p><h1>Settings</h1>"
-                    f"<p class='muted sm'>Signed in as <code>{html.escape(user)}</code></p>")
-            done_link = "<a class=btn href='/prbot/logout'>Sign out</a>"
+            done_link = f"<a class=btn href='{html.escape(nxt)}'>Skip for now → queue</a>"
+            body = (
+                head + banner + checklist
+                + "<div class=card><form method=post action='/prbot/settings'>"
+                  "<ol class=steps>"
+                  "<li><h5>Slack member ID</h5>"
+                  "<div class=field><input type=text id=slack_id name=slack_id "
+                  f"placeholder='U0123ABCDEF' value='{html.escape(u.get('slack_id', ''))}' "
+                  "autocomplete=off spellcheck=false></div><div class=hint id=slackhint></div>"
+                  "<div class=hint>In Slack: your <b>profile picture</b> → <b>Profile</b> → the "
+                  "<b>⋮</b> menu → <b>Copy member ID</b>. Starts with <code>U</code>.</div></li>"
+                  "<li><h5>Claude account <span class='muted sm'>(optional)</span></h5>"
+                + claude_inner + "</li></ol>" + hidden
+                + "<p style='margin:18px 0 0'><button class='btn primary' type=submit "
+                  "data-busy='Saving…'>Save</button> " + done_link + "</p>"
+                  "</form>" + claude_aux + "</div>")
+            return self.reply(200, shell("Welcome", body, user=user, active="integrations"))
 
-        body = (
-            head + banner + checklist
-            + "<div class=card><form method=post action='/prbot/settings'>"
-              "<ol class=steps>"
-              # -- slack -------------------------------------------------------------------
-              "<li><h5>Slack member ID</h5>"
-              "<div class=field><input type=text id=slack_id name=slack_id "
-              f"placeholder='U0123ABCDEF' value='{html.escape(u.get('slack_id', ''))}' "
-              "autocomplete=off spellcheck=false></div>"
-              "<div class=hint id=slackhint></div>"
-              "<div class=hint>In Slack: click your <b>profile picture</b> → <b>Profile</b> → "
-              "the <b>⋮</b> menu → <b>Copy member ID</b>. It starts with <code>U</code>.</div>"
-              "</li>"
-              # -- claude ------------------------------------------------------------------
-              "<li><h5>Claude account <span class='muted sm'>(optional)</span></h5>"
-            + claude_inner
-            + "</li>"
-              # -- github ------------------------------------------------------------------
-              "<li><h5>GitHub token <span class='muted sm'>(only to replace it)</span></h5>"
-            + ("<div class=hint>You signed in with GitHub, so this is already handled and "
-               "refreshed automatically. Paste a personal token only if you want to use that "
-               "instead.</div>" if u.get("gh_token_enc") else
-               "<div class=hint>Leave blank to keep the current one. Paste a new token to "
-               "rotate it — for example when the old one expires.</div>")
-            + "<div class=field style='margin-top:8px'><input type=password id=gtok name=pat "
-              "placeholder='ghp_…' autocomplete=off spellcheck=false>"
-              "<button type=button class='btn ghost sm' onclick=\"peek('gtok',this)\">show"
-              "</button></div></li>"
-              "</ol>"
-              f"<input type=hidden name=exp value='{exp}'>"
-              f"<input type=hidden name=sig value='{sig}'>"
-              f"<input type=hidden name=welcome value='{'1' if welcome else ''}'>"
-              f"<input type=hidden name=next value='{html.escape(nxt)}'>"
-              "<p style='margin:18px 0 0'><button class='btn primary' type=submit "
-              "data-busy='Saving…'>Save</button> " + done_link + "</p>"
-              "</form>" + claude_aux + "</div>")
-        return self.reply(200, shell("Welcome" if welcome else "Settings", body))
+        # --- Integrations page: one card per connection --------------------------------------
+        def card(icon, name, connected, sub, control):
+            chip = ("<span class=tag-on>Connected</span>" if connected
+                    else "<span class=tag-off>Not connected</span>")
+            return (f"<div class=intg><div class=ico>{icon}</div><div class=bd>"
+                    f"<div class=hd><h4>{name}</h4>{chip}</div>"
+                    f"<div class=hint style='margin-top:4px'>{sub}</div>{control}</div></div>")
+
+        gh_svg = ("<svg viewBox='0 0 16 16' width=22 height=22 fill=currentColor><path d='M8 0C3."
+                  "58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.0"
+                  "1-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-."
+                  "53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2"
+                  "-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2"
+                  ".2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1"
+                  ".16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.5"
+                  "4 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58"
+                  "-8-8-8z'/></svg>")
+        gh_sub = (f"Connected as <code>{html.escape(user)}</code> "
+                  + ("via GitHub sign-in — refreshed automatically. Comments and approvals post "
+                     "under this name." if u.get("gh_token_enc") else
+                     "via personal token. Comments and approvals post under this name."))
+        gh_ctl = ("<details style='margin-top:10px'><summary class=sm>Replace token</summary>"
+                  "<div class=dbody><div class=field style='margin-top:8px'>"
+                  "<input type=password id=gtok name=pat placeholder='ghp_…' autocomplete=off "
+                  "spellcheck=false><button type=button class='btn ghost sm' "
+                  "onclick=\"peek('gtok',this)\">show</button></div>"
+                  "<div class=hint>Leave blank to keep the current one. Paste a new token to "
+                  "rotate it.</div></div></details>")
+        slack_ctl = ("<div class=field style='margin-top:10px'><input type=text id=slack_id "
+                     f"name=slack_id placeholder='U0123ABCDEF' "
+                     f"value='{html.escape(u.get('slack_id', ''))}' autocomplete=off "
+                     "spellcheck=false></div><div class=hint id=slackhint></div>"
+                     "<div class=hint>In Slack: your <b>profile picture</b> → <b>Profile</b> → "
+                     "the <b>⋮</b> menu → <b>Copy member ID</b>.</div>")
+
+        github_slack_form = (
+            "<form method=post action='/prbot/settings'>"
+            + card(gh_svg, "GitHub", True, "Who Robin posts as.", gh_ctl)
+            + card("💬", "Slack", has_slack,
+                   "Pings you when a review is requested.", slack_ctl)
+            + hidden
+            + "<p style='margin:16px 0 4px'><button class='btn primary' type=submit "
+              "data-busy='Saving…'>Save</button></p></form>")
+        claude_card = ("<div class=intg><div class=ico>✳️</div><div class=bd>"
+                       "<div class=hd><h4>Claude</h4>"
+                       + ("<span class=tag-on>Connected</span>" if has_claude
+                          else "<span class=tag-off>Shared runner</span>")
+                       + "</div><div class=hint style='margin-top:4px'>Whose account runs the "
+                       "reviews you start.</div>" + claude_inner + "</div></div>")
+
+        body = (f"<h1>Integrations</h1>"
+                "<p class=lead>The three services Robin connects to. Everything is stored "
+                "encrypted on this box and used only on your behalf.</p>" + banner
+                + github_slack_form + claude_card + claude_aux)
+        return self.reply(200, shell("Integrations", body, user=user, active="integrations"))
+
+    def how_page(self, user):
+        def fstep(n, title, txt, shot=None):
+            s = ""
+            if shot:
+                s = (f"<div class='shot ph'>{shot}</div>")
+            return (f"<div class=fstep><div class=fn>{n}</div><div class=fb>"
+                    f"<h4>{title}</h4><div class='muted sm'>{txt}</div>{s}</div></div>")
+        flow = ("<div class=flow>"
+                + fstep(1, "A review is requested",
+                        "A teammate adds you as a reviewer on a PR. Robin notices within 3 "
+                        "minutes and sends you a Slack card — no need to watch GitHub.",
+                        "Screenshot: the Slack review card")
+                + fstep(2, "Robin drafts the review",
+                        "You click through to the PR. Robin checks out the branch and runs the "
+                        "<code>pr-review</code> skill against the real diff — about 10–15 "
+                        "minutes for a 25-file PR. Nothing is posted to GitHub in this step.")
+                + fstep(3, "You decide what's worth saying",
+                        "The findings appear as editable cards, each with a severity and a "
+                        "<code>file:line</code>. Tick the ones you agree with, edit any wording, "
+                        "ignore the rest.",
+                        "Screenshot: the findings list with checkboxes")
+                + fstep(4, "Post — as you",
+                        "The selected comments post to the PR as inline review comments under "
+                        "your own GitHub name. Always a plain COMMENT review — Robin never "
+                        "requests changes or blocks a merge.")
+                + fstep(5, "Approve when you're ready",
+                        "A separate click posts an LGTM comment and approves the PR, also as "
+                        "you. This is what stops the 'posted comments, forgot to approve' loop.")
+                + "</div>")
+        guarantees = ("<div class=grid2>"
+                      "<div class=mini><div class=t>🧑 Always you</div><div class='muted sm'>"
+                      "Every comment and approval posts under your own GitHub account.</div></div>"
+                      "<div class=mini><div class=t>🖱️ Nothing automatic</div>"
+                      "<div class='muted sm'>Nothing reaches GitHub without your click. The "
+                      "review step can't write to GitHub at all.</div></div>"
+                      "<div class=mini><div class=t>💬 Comments, not blocks</div>"
+                      "<div class='muted sm'>Robin posts plain review comments — it never "
+                      "requests changes or blocks a merge.</div></div>"
+                      "<div class=mini><div class=t>🔒 Your credentials, encrypted</div>"
+                      "<div class='muted sm'>Your GitHub and Claude tokens are encrypted on the "
+                      "box and used only for your actions.</div></div></div>")
+        tabs = "".join(
+            f"<div class=mini><div class=t>{lbl}</div><div class='muted sm'>"
+            f"{TAB_DESC.get(k, '')}</div></div>" for k, lbl in TABS if k != "all")
+        body = (f"<h1>How {html.escape(BRAND)} works</h1>"
+                "<p class=lead>Robin drafts the PR reviews you owe your team, and lets you send "
+                "them with a click. It's an assistant — you stay the reviewer.</p>"
+                + flow
+                + "<h2>The guarantees</h2>" + guarantees
+                + "<h2>What the tabs mean</h2><div class=grid2>" + tabs + "</div>"
+                + "<p class=fine>Questions or something not working? Ping "
+                  f"<code>{html.escape(REVIEWER)}</code>.</p>")
+        return self.reply(200, shell("How it works", body, user=user, active="how"))
 
     def claude_section(self, user, u, exp, sig, welcome, nxt):
         """(inner, aux): the Claude block for inside the settings <form>, plus the auxiliary
@@ -1748,14 +1940,6 @@ class Handler(BaseHTTPRequestHandler):
                  + stat("posted", "Pending approval")
                  + stat("approved", "Approved") + "</div>")
 
-        avatar = html.escape((user[:1] or "?").upper())
-        nav = (f"<span class='live {'dry' if DRY_RUN else 'on'}'>"
-               + ("dry run" if DRY_RUN else "live") + "</span>"
-               f"<span class=who><span class=av>{avatar}</span>"
-               f"<span class=nm>{html.escape(user)}</span></span>"
-               "<a href='/prbot/settings'>Settings</a>"
-               "<a href='/prbot/logout'>Sign out</a>")
-
         slack_ok = bool((load_users().get(user) or {}).get("slack_id"))
         body = (f"<h1>Your review queue</h1>"
                 f"<p class='muted sm'>Reviews requested from you across "
@@ -1763,8 +1947,8 @@ class Handler(BaseHTTPRequestHandler):
                 f"</p>{dry_banner()}"
                 + ("" if slack_ok else
                    "<div class='banner warn'><span>💬</span><div>No Slack member ID yet — "
-                   "review requests won't ping you. <a href='/prbot/settings'>Add it in "
-                   "settings.</a></div></div>")
+                   "review requests won't ping you. <a href='/prbot/integrations'>Add it in "
+                   "Integrations.</a></div></div>")
                 + strip
                 + f"<div class=tabs>{tabs}</div>"
                 + f"<div class=tabdesc>{TAB_DESC.get(tab, '')}</div>"
@@ -1774,7 +1958,7 @@ class Handler(BaseHTTPRequestHandler):
                    f"<div class=empty><span class=ic>{empty[0]}</span>"
                    f"<b>{empty[1]}</b>{empty[2]}</div>")
                 + "</div>")
-        return self.reply(200, shell("Queue", body, nav=nav))
+        return self.reply(200, shell("Queue", body, user=user, active="queue"))
 
     def timeline(self, pr, user):
         """reviewed → posted → approved, with dates. Reads at a glance where a PR stands."""
@@ -1835,14 +2019,14 @@ class Handler(BaseHTTPRequestHandler):
                 + "</div></div>"
                 f"<div class=card><p><a class='btn primary' href='{link('review', pr)}'>"
                 f"Re-run review</a> <a class=btn href='{link('archive', pr)}'>Archive</a></p>"
-                f"</div>")))
+                f"</div>"), user=user, active="queue"))
 
         if st == "reviewing":
             s = (STATE / pr / "status").read_text().strip()
             return self.reply(200, shell(f"#{pr}", head + (
                 f"<div class=card><h4>Working…</h4><p class='muted sm'>Status: <code>"
                 f"{html.escape(s)}</code>. This page refreshes itself; a 25-file PR takes "
-                f"10–15 minutes.</p></div>"), refresh=link("pr", pr)))
+                f"10–15 minutes.</p></div>"), refresh=link("pr", pr), user=user, active="queue"))
 
         rev = load_review(pr)
         if not rev:
@@ -1858,9 +2042,11 @@ class Handler(BaseHTTPRequestHandler):
                     f"<p><a class='btn primary' href='{link('review', pr)}'>Run review</a></p>"
                     f"</div>") if not approved else approved
             return self.reply(200, shell(f"#{pr}",
-                                         head + note + body + self.footer_actions(pr, user)))
+                                         head + note + body + self.footer_actions(pr, user),
+                                         user=user, active="queue"))
 
-        return self.reply(200, shell(f"#{pr}", head + self.review_body(pr, rev, user)))
+        return self.reply(200, shell(f"#{pr}", head + self.review_body(pr, rev, user),
+                                     user=user, active="queue"))
 
     def review_body(self, pr, rev, user):
         ev = rev.get("event", "COMMENT")
