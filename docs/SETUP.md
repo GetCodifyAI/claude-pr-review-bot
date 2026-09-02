@@ -127,13 +127,52 @@ Click **Open review** on the card. The first visit starts the review; the page r
 
 One box, many reviewers. The owner does steps 1–5 above once; everyone else does this:
 
+### GitHub login — one click instead of a token (recommended)
+
+Create an app, paste two values into `.env`, restart. Teammates then see **Sign in with
+GitHub** and never touch a token. Two kinds of app; start with the first:
+
+**Option A — OAuth App (no org installation needed).** github.com → Settings → Developer
+settings → OAuth Apps → *New OAuth App*:
+
+| Field                      | Value                                                            |
+| -------------------------- | ---------------------------------------------------------------- |
+| Application name           | `PR review bot`                                                  |
+| Homepage URL               | `https://prbot-<env>.staging.eng.cutanddry.com/prbot/`           |
+| Authorization callback URL | `https://prbot-<env>.staging.eng.cutanddry.com/prbot/oauth/callback` |
+| Enable Device Flow         | off                                                              |
+
+Generate a client secret, then on the box:
+
+```bash
+sed -i "s|^GH_CLIENT_ID=.*|GH_CLIENT_ID=<client id>|; s|^GH_CLIENT_SECRET=.*|GH_CLIENT_SECRET=<secret>|; s|^GH_OAUTH_SCOPES=.*|GH_OAUTH_SCOPES=repo|" ~/.claude-pr-bot/.env
+sudo systemctl restart prbot
+```
+
+Teammates click *Sign in with GitHub* → GitHub's *Authorize* screen → back to the dashboard,
+landing on Settings the first time so they add their Slack member ID. The token GitHub issues
+acts as them (comments carry their name), does not expire, and they can revoke it any time at
+github.com/settings/applications.
+
+> If the sign-in comes back with **"the token cannot see GetCodifyAI/cut-and-dry"**, the org
+> has *third-party OAuth application access restrictions* on. An org owner approves the app
+> once (Org settings → Third-party access → the pending request) and it works for everyone
+> from then on. Token sign-in keeps working meanwhile.
+
+**Option B — GitHub App (better tokens, needs an org owner to install it).** Same callback
+URL; permissions *Pull requests: Read & write*, *Contents: Read*; enable *Request user
+authorization (OAuth) during installation*; leave `GH_OAUTH_SCOPES` **empty**. User tokens
+last **8 hours** and the dashboard refreshes them itself; comments show the user's avatar with
+the app's badge. Ask an owner to install it on `GetCodifyAI` — until then the sign-in fails
+with the same message as above. This is the end-state; Option A is the way to be live today.
+
 ### Teammate — under two minutes
 
 1. Open `https://prbot-<env>.staging.eng.cutanddry.com/prbot/login` (the owner sends you the
    link).
-2. Paste a **classic GitHub PAT** with `repo` scope. It is verified against GitHub, stored
-   encrypted on the box, and used for exactly one thing: posting the comments and approvals
-   *you* choose, under *your* name.
+2. Click **Sign in with GitHub** and authorize. (If the box has no GitHub login configured
+   yet, paste a **classic GitHub PAT** with `repo` scope instead — verified against GitHub,
+   stored encrypted, used only to post the comments and approvals *you* choose, as *you*.)
 3. Paste your **Slack member ID** (Slack profile → ⋮ → *Copy member ID*) so review requests
    ping you. Optional; you can add it later in *Settings*.
 

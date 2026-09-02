@@ -32,6 +32,19 @@ REVIEWER=
 # from this, so there is one value to get right instead of two that can drift apart.
 PRBOT_ENV=
 
+# --- GitHub login (one-click sign-in instead of pasting a token) -------------------------------
+
+# Create an OAuth App (github.com/settings/developers) or a GitHub App, with callback URL
+#   https://prbot-<env>.staging.eng.cutanddry.com/prbot/oauth/callback
+# and paste its client ID + secret here. Leave empty and the login page offers token
+# sign-in only. Restart prbot after changing.
+GH_CLIENT_ID=
+GH_CLIENT_SECRET=
+# Classic OAuth App: set to `repo` (tokens act as the user; no expiry; user can revoke at
+# github.com/settings/applications). GitHub App: leave EMPTY — permissions come from the app,
+# tokens last 8 hours and are refreshed here automatically.
+GH_OAUTH_SCOPES=
+
 # --- defaults that are usually right ----------------------------------------------------------
 
 REPO=GetCodifyAI/cut-and-dry

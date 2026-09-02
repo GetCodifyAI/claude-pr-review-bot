@@ -35,7 +35,8 @@ from hashlib import sha256
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, quote, urlparse
+from urllib.parse import parse_qs, quote, urlencode, urlparse
+from urllib.request import Request, urlopen
 
 import prbot_diff
 import prbot_md
@@ -122,7 +123,13 @@ def save_users(users):
 
 
 def user_pat(login):
+    """The token to act as `login`: their GitHub-login OAuth token if they signed in that way
+    (refreshed here if it has expired), else the PAT they pasted."""
     u = load_users().get(login) or {}
+    if u.get("gh_token_enc"):
+        tok = oauth_fresh_token(login, u)
+        if tok:
+            return tok
     if u.get("pat_enc"):
         try:
             return dec(u["pat_enc"])
@@ -131,8 +138,106 @@ def user_pat(login):
     return ""
 
 
+# --- github login (OAuth) --------------------------------------------------------------------
+# Works with a GitHub App (recommended: 8-hour user tokens + refresh, permissions scoped to
+# the app, comments show the user's avatar with the app's badge) or a classic OAuth App (set
+# GH_OAUTH_SCOPES=repo; tokens then have no expiry and no refresh). Either way the token acts
+# AS THE USER — the whole point — and nobody pastes anything.
+GH_CLIENT_ID = ENV.get("GH_CLIENT_ID", "")
+GH_CLIENT_SECRET = ENV.get("GH_CLIENT_SECRET", "")
+GH_OAUTH_SCOPES = ENV.get("GH_OAUTH_SCOPES", "")
+PUBLIC_URL = ENV.get("PUBLIC_URL") or (
+    f"https://prbot-{ENV.get('PRBOT_ENV', '')}.{ENV.get('PRBOT_DOMAIN', 'staging.eng.cutanddry.com')}")
+OAUTH_ENABLED = bool(GH_CLIENT_ID and GH_CLIENT_SECRET)
+
+
+def oauth_state(nxt):
+    """Signed, 10-minute state carrying where to land afterwards. Rejects forged callbacks."""
+    exp = int(time.time()) + 600
+    payload = f"{exp}:{nxt}"
+    sig = hmac.new(SECRET.encode(), f"oauth:{payload}".encode(), sha256).hexdigest()
+    # Raw, not percent-encoded: urlencode() in oauth_authorize_url does that once. Encoding
+    # here too made GitHub echo back a double-encoded state that never verified.
+    return f"{sig}:{payload}"
+
+
+def oauth_check_state(state):
+    sig, _, payload = (state or "").partition(":")
+    if not (sig and payload):
+        return None
+    if not hmac.compare_digest(
+            hmac.new(SECRET.encode(), f"oauth:{payload}".encode(), sha256).hexdigest(), sig):
+        return None
+    exp, _, nxt = payload.partition(":")
+    try:
+        if int(exp) < time.time():
+            return None
+    except ValueError:
+        return None
+    return nxt if nxt.startswith("/prbot/") else "/prbot/"
+
+
+def oauth_authorize_url(nxt):
+    q = {"client_id": GH_CLIENT_ID, "redirect_uri": f"{PUBLIC_URL}/prbot/oauth/callback",
+         "state": oauth_state(nxt)}
+    if GH_OAUTH_SCOPES:
+        q["scope"] = GH_OAUTH_SCOPES
+    return "https://github.com/login/oauth/authorize?" + urlencode(q)
+
+
+def oauth_token_request(params):
+    """POST to GitHub's token endpoint. Returns the JSON dict, or {} on any failure."""
+    body = urlencode({"client_id": GH_CLIENT_ID, "client_secret": GH_CLIENT_SECRET,
+                      **params}).encode()
+    req = Request("https://github.com/login/oauth/access_token", data=body,
+                  headers={"Accept": "application/json",
+                           "Content-Type": "application/x-www-form-urlencoded"})
+    try:
+        with urlopen(req, timeout=20) as r:
+            d = json.loads(r.read().decode() or "{}")
+    except (OSError, ValueError):
+        return {}
+    return d if isinstance(d, dict) and d.get("access_token") else {}
+
+
+def oauth_store(login, d, name, prev):
+    """Persist a token response. Expiry is absolute; 0 means the token never expires."""
+    now = int(time.time())
+    u = dict(prev)
+    u.update({
+        "gh_token_enc": enc(d["access_token"]),
+        "gh_exp": now + int(d["expires_in"]) if d.get("expires_in") else 0,
+        "name": name or u.get("name", ""),
+        "added": u.get("added") or now, "updated": now,
+    })
+    if d.get("refresh_token"):
+        u["gh_refresh_enc"] = enc(d["refresh_token"])
+        u["gh_refresh_exp"] = now + int(d.get("refresh_token_expires_in") or 0)
+    users = load_users()
+    users[login] = u
+    save_users(users)
+
+
+def oauth_fresh_token(login, u):
+    """Decrypt the user's token; if it expires within a minute, refresh it first."""
+    try:
+        exp = int(u.get("gh_exp") or 0)
+        if not exp or exp - 60 > time.time():
+            return dec(u["gh_token_enc"])
+        if not u.get("gh_refresh_enc"):
+            return ""
+        d = oauth_token_request({"grant_type": "refresh_token",
+                                 "refresh_token": dec(u["gh_refresh_enc"])})
+        if not d:
+            return ""
+        oauth_store(login, d, u.get("name", ""), u)
+        return d["access_token"]
+    except RuntimeError:
+        return ""
+
+
 def verify_pat(pat):
-    """(login, name, error). Proves the PAT is real and can see the repo before storing it."""
+    """(login, name, error). Proves the token is real and can see the repo before storing it."""
     r = gh(["api", "user"], token=pat, timeout=20)
     if r.returncode != 0:
         return None, None, "GitHub did not accept that token."
@@ -760,6 +865,19 @@ class Handler(BaseHTTPRequestHandler):
             return self.login_page((q.get("next") or ["/prbot/"])[0])
         if route == "/logout":
             return self.redirect("/prbot/login", cookie=clear_session_cookie())
+        if route == "/oauth/start":
+            if not OAUTH_ENABLED:
+                return self.login_page("/prbot/", "<div class='banner warn'><span>⚠️</span>"
+                                       "<div>GitHub login is not configured on this box yet — "
+                                       "use a token below.</div></div>")
+            nxt = (q.get("next") or ["/prbot/"])[0]
+            return self.redirect(oauth_authorize_url(nxt if nxt.startswith("/prbot/")
+                                                     else "/prbot/"))
+        if route == "/oauth/callback":
+            return self.oauth_callback((q.get("code") or [""])[0],
+                                       (q.get("state") or [""])[0],
+                                       (q.get("error_description") or
+                                        q.get("error") or [""])[0])
 
         user = session_user(self.headers)
         if not user:
@@ -825,12 +943,58 @@ class Handler(BaseHTTPRequestHandler):
         return self.do_approve(pr, user, form)
 
     # -- auth pages ----------------------------------------------------------------------------
+    def oauth_callback(self, code, state, error):
+        nxt = oauth_check_state(state)
+        if nxt is None:
+            return self.login_page("/prbot/", "<div class='banner err'><span>🚫</span><div>"
+                                   "That sign-in link was stale or altered — try again.</div>"
+                                   "</div>")
+        if error or not code:
+            return self.login_page(nxt, f"<div class='banner err'><span>🚫</span><div>GitHub "
+                                        f"did not complete the sign-in: "
+                                        f"{html.escape(error or 'no code returned')}</div></div>")
+        d = oauth_token_request({"code": code,
+                                 "redirect_uri": f"{PUBLIC_URL}/prbot/oauth/callback"})
+        if not d:
+            return self.login_page(nxt, "<div class='banner err'><span>🚫</span><div>GitHub "
+                                        "rejected the sign-in code. Try again.</div></div>")
+        login, name, err = verify_pat(d["access_token"])
+        if err:
+            # The usual cause is on the org side, not the user's: a GitHub App not yet
+            # installed on the org, or an OAuth App blocked by the org's third-party access
+            # restrictions. Say that, rather than "bad token".
+            return self.login_page(nxt, (
+                f"<div class='banner err'><span>🚫</span><div><b>GitHub signed you in, but the "
+                f"token cannot see <code>{html.escape(REPO)}</code>.</b><br>An org owner needs "
+                f"to allow this app once: for an OAuth App, approve it under the org's "
+                f"<em>Third-party access</em> settings; for a GitHub App, install it on the org. "
+                f"Until then, sign in with a token below.</div></div>"))
+        prev = load_users().get(login) or {}
+        oauth_store(login, d, name, prev)
+        print(f"login (github): {login}", flush=True)
+        # First sign-in with no Slack ID: land on settings so the ping actually reaches them.
+        if not prev.get("slack_id"):
+            nxt = "/prbot/settings"
+        return self.redirect(nxt, cookie=session_cookie(login))
+
     def login_page(self, nxt="/prbot/", banner=""):
         if not nxt.startswith("/prbot/"):
             nxt = "/prbot/"
+        github_btn = ""
+        if OAUTH_ENABLED:
+            github_btn = (
+                "<div class=card style='margin-bottom:14px'>"
+                "<h4 style='margin-top:0'>Sign in with GitHub</h4>"
+                "<p class='muted sm'>One click. GitHub issues this dashboard a short-lived "
+                "token that acts as you — comments and approvals carry your name. Nothing to "
+                "paste, nothing to rotate.</p>"
+                f"<p><a class='btn primary' href='/prbot/oauth/start?next={quote(nxt, safe='')}'>"
+                "Sign in with GitHub</a></p></div>"
+                "<details><summary>Or sign in with a token instead</summary><div class=dbody>")
         body = (
             "<h1>PR review bot</h1>"
             f"<p class='muted sm'>Reviewing <code>{html.escape(REPO)}</code></p>" + banner
+            + github_btn
             + "<div class=card><form method=post action='/prbot/login'>"
               "<h4 style='margin-top:0'>Sign in with your GitHub token</h4>"
               "<p class='muted sm'>A <b>classic</b> personal access token with the "
@@ -850,7 +1014,8 @@ class Handler(BaseHTTPRequestHandler):
               f"<input type=hidden name=next value='{html.escape(nxt)}'>"
               "<p><button class='btn primary' type=submit>Sign in</button></p>"
               "</form></div>"
-              "<p class='muted sm'>Reviews themselves run on the shared team runner — there "
+            + ("</div></details>" if OAUTH_ENABLED else "")
+            + "<p class='muted sm'>Reviews themselves run on the shared team runner — there "
               "is nothing to connect for that.</p>")
         return self.reply(200, shell("Sign in", body))
 
@@ -888,9 +1053,13 @@ class Handler(BaseHTTPRequestHandler):
               "member ID. Your profile → ⋮ → <b>Copy member ID</b>.</p>"
               f"<textarea class=short name=slack_id style='min-height:52px'>"
               f"{html.escape(u.get('slack_id', ''))}</textarea>"
-              "<h4>GitHub token</h4>"
-              "<p class='muted sm'>Leave blank to keep the current one. Paste a new token "
-              "to replace it.</p>"
+              "<h4>GitHub</h4>"
+            + ("<p class='muted sm'>Signed in with GitHub — your token is issued by GitHub "
+               "and refreshed automatically. You can still paste a personal token below to "
+               "use that instead.</p>" if u.get("gh_token_enc") else
+               "<p class='muted sm'>Leave blank to keep the current token. Paste a new one "
+               "to replace it.</p>")
+            + 
               "<textarea class=short name=pat placeholder='ghp_… (optional)' "
               "style='min-height:52px'></textarea>"
               "<h4>Claude</h4>"

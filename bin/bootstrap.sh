@@ -59,6 +59,10 @@ ask REVIEWER "Your GitHub login"
 # hostname both derive from it, so there is one value to get right instead of two.
 ask PRBOT_ENV "Your staging env slug (branch minus -staging, e.g. asela)"
 ensure_key PRBOT_DOMAIN "staging.eng.cutanddry.com"
+# GitHub login. Empty = token sign-in only. See docs/SETUP.md "GitHub login".
+ensure_key GH_CLIENT_ID ""
+ensure_key GH_CLIENT_SECRET ""
+ensure_key GH_OAUTH_SCOPES ""
 ensure_key DRY_RUN 1
 ensure_key SKIP_BOT_PRS 0
 ensure_key PRBOT_SECRET "$(openssl rand -hex 32)"

@@ -18,6 +18,11 @@ the dangerous ones are short-lived, and the process itself cannot be reached dir
   valid for 30 days. Unauthenticated requests — including POSTs — bounce to the login page.
   Deleting a user from `users.json` invalidates their session on the next request.
 
+- **GitHub login tokens are GitHub's, not pasted.** The OAuth `state` is HMAC-signed with a
+  10-minute expiry and carries only an in-`/prbot/` return path, so a forged or replayed
+  callback is rejected and cannot redirect off-site. Tokens (and refresh tokens, for a GitHub
+  App) are stored exactly like PATs below, and refreshed server-side a minute before expiry.
+
 - **Stored PATs are encrypted at rest** (AES-256-CBC, PBKDF2) with a key *derived* from
   `PRBOT_SECRET`, not stored beside them. Rotating the secret therefore also invalidates every
   stored PAT — the right outcome if the secret was rotated because it leaked. The shell
