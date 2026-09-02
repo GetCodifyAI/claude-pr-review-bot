@@ -172,14 +172,17 @@ with the same message as above. This is the end-state; Option A is the way to be
 
 1. Open `https://prbot-<env>.staging.eng.cutanddry.com/prbot/login` (the owner sends you the
    link).
-2. Click **Sign in with GitHub** and authorize. (If the box has no GitHub login configured
-   yet, paste a **classic GitHub PAT** with `repo` scope instead — verified against GitHub,
-   stored encrypted, used only to post the comments and approvals *you* choose, as *you*.)
-3. Paste your **Slack member ID** (Slack profile → ⋮ → *Copy member ID*) so review requests
-   ping you. Optional; you can add it later in *Settings*.
+2. **Sign in with GitHub** if the button is there. Otherwise the token path is two clicks:
+   *Create token on GitHub ↗* opens GitHub with the scope and name already filled in — pick
+   an expiry, *Generate token*, copy — then paste it. The page tells you as you paste whether
+   it looks right, and checks it with GitHub on submit. The token is stored encrypted and used
+   only to post the comments and approvals *you* choose, as *you*.
+3. You land on a **welcome checklist**: paste your **Slack member ID** (Slack → your profile
+   picture → Profile → ⋮ → *Copy member ID*) so review requests ping you, and optionally
+   connect your own Claude account. *Skip for now* is fine; both live in *Settings*.
 
 Done. The next time someone requests your review, you get a card in the shared channel
-within 3 minutes, with the review already running.
+within 3 minutes.
 
 ### Owner — one-time
 

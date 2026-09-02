@@ -177,6 +177,16 @@ def oauth_check_state(state):
     return nxt if nxt.startswith("/prbot/") else "/prbot/"
 
 
+OAUTH_BLOCKED = ROOT / "oauth-blocked"
+
+
+def oauth_blocked():
+    """True after a GitHub sign-in that succeeded at GitHub but could not see the repo — the
+    org has not approved the app yet. Cleared by the first sign-in that can. Lets the login
+    page demote the GitHub button instead of walking every newcomer into the same error."""
+    return OAUTH_BLOCKED.exists()
+
+
 def oauth_authorize_url(nxt):
     q = {"client_id": GH_CLIENT_ID, "redirect_uri": f"{PUBLIC_URL}/prbot/oauth/callback",
          "state": oauth_state(nxt)}
@@ -598,11 +608,41 @@ margin-right:8px;border:1px solid var(--line2);border-radius:8px;white-space:now
 .ttl{color:var(--fg);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;
 white-space:nowrap}
 .list{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.lead{font-size:1.02rem;color:var(--dim);margin:4px 0 18px;max-width:40rem}
+.fine{font-size:.8rem;color:var(--dim);margin:14px 0 0}
+input[type=text],input[type=password]{width:100%;background:#010409;color:var(--fg);
+border:1px solid var(--line);border-radius:9px;padding:11px 13px;font:14px/1.4 ui-monospace,
+SFMono-Regular,Menlo,monospace}
+input[type=text]:focus,input[type=password]:focus{outline:0;border-color:var(--accent)}
+.field{display:flex;gap:8px;align-items:stretch}.field input{flex:1;min-width:0}
+.btn.sm{padding:6px 12px;font-size:.82rem}
+.hint{font-size:.85rem;color:var(--dim);margin:8px 0 0;min-height:1.2em}
+.hint.ok{color:#7ee2a0}.hint.warn{color:#ffd07b}.hint.err{color:#ff9aa2}
+.steps{list-style:none;counter-reset:s;padding:0;margin:6px 0 0}
+.steps li{counter-increment:s;position:relative;padding:0 0 22px 46px;margin:0}
+.steps li:last-child{padding-bottom:0}
+.steps li::before{content:counter(s);position:absolute;left:0;top:-2px;width:30px;height:30px;
+border-radius:999px;background:#21262d;border:1px solid var(--line);color:var(--fg);
+font-weight:700;font-size:.85rem;display:flex;align-items:center;justify-content:center}
+.steps li:not(:last-child)::after{content:"";position:absolute;left:14px;top:30px;bottom:6px;
+width:1px;background:var(--line2)}
+.steps h5{margin:2px 0 8px;font-size:1rem}
+.steps .hint{margin-top:6px}
+.checklist{display:flex;flex-direction:column;gap:8px;margin:16px 0 22px}
+.ck{display:flex;gap:12px;align-items:flex-start;padding:12px 16px;border-radius:10px;
+border:1px solid var(--line);background:var(--panel);font-size:.92rem}
+.ck .m{width:22px;height:22px;border-radius:999px;flex:none;display:flex;align-items:center;
+justify-content:center;font-size:.8rem;font-weight:700;border:1px solid var(--line)}
+.ck.done{border-color:#1f5132}.ck.done .m{background:#0f2419;color:#7ee2a0;border-color:#1f5132}
+.ck.todo .m{color:var(--dim)}.ck .t{flex:1}.ck .t b{display:block;color:var(--fg)}
+.ck .t span{color:var(--dim);
+font-size:.85rem}
+.ghwait{opacity:.75}
 @media(max-width:640px){.wrap{padding:18px 14px 0}.thread{margin-left:0}
 .bar .inner{padding:10px 14px}h1{font-size:1.15rem}}
 """
 
-JS = """
+JS = r"""
 function upd(){
   var n=0,b=document.querySelectorAll('.fsel');
   b.forEach(function(c){
@@ -617,6 +657,35 @@ function upd(){
 function all(v){document.querySelectorAll('.fsel').forEach(function(c){c.checked=v});upd()}
 document.addEventListener('change',function(e){if(e.target.classList.contains('fsel'))upd()});
 document.addEventListener('DOMContentLoaded',upd);
+function tokcheck(){
+  var p=document.getElementById('pat'),h=document.getElementById('pathint'),
+      g=document.getElementById('go');
+  if(!p||!h||!g)return;
+  var v=p.value.trim(),ok=false,m='',c='';
+  if(!v){m='';}
+  else if(/^ghp_[A-Za-z0-9]{36}$/.test(v)){ok=true;c='ok';m='\u2713 Looks like a classic token';}
+  else if(/^github_pat_/.test(v)){ok=true;c='warn';m='\u26a0 Fine-grained token \u2014 the org\u2019s approval policy can block these. A classic token is the safe choice.';}
+  else if(/^gh[ous]_[A-Za-z0-9]+$/.test(v)){ok=true;c='warn';m='\u26a0 That is an app/OAuth token, not a personal one \u2014 it may work, but a classic ghp_ token is what this expects.';}
+  else{c='err';m='That does not look like a GitHub token \u2014 classic ones start with ghp_ and are 40 characters.';}
+  h.textContent=m;h.className='hint '+c;g.disabled=!ok;
+}
+function slackcheck(){
+  var s=document.getElementById('slack_id'),h=document.getElementById('slackhint');
+  if(!s||!h)return;
+  var v=s.value.trim();
+  if(!v){h.textContent='';h.className='hint';return;}
+  if(/^[UW][A-Z0-9]{8,12}$/.test(v)){h.textContent='\u2713 Looks like a member ID';h.className='hint ok';}
+  else if(/^@/.test(v)||/\s/.test(v)){h.textContent='Paste the member ID (starts with U), not your @handle.';h.className='hint err';}
+  else{h.textContent='Member IDs start with U and are 9\u201313 characters, e.g. U0123ABCDEF.';h.className='hint warn';}
+}
+function peek(id,btn){var i=document.getElementById(id);if(!i)return;
+  i.type=i.type==='password'?'text':'password';btn.textContent=i.type==='password'?'show':'hide';}
+document.addEventListener('input',function(e){
+  if(e.target.id==='pat')tokcheck();if(e.target.id==='slack_id')slackcheck();});
+document.addEventListener('submit',function(e){
+  var b=e.target.querySelector('button[type=submit]');
+  if(b){b.disabled=true;b.dataset.was=b.textContent;b.textContent=b.dataset.busy||'Working\u2026';}});
+document.addEventListener('DOMContentLoaded',function(){tokcheck();slackcheck();});
 """
 
 
@@ -926,7 +995,8 @@ class Handler(BaseHTTPRequestHandler):
         if not user:
             return self.to_login()
         if route == "/settings":
-            return self.settings_page(user)
+            return self.settings_page(user, welcome=bool((q.get("welcome") or [""])[0]),
+                                      nxt=(q.get("next") or ["/prbot/"])[0])
         if route == "/":
             tab = (q.get("tab") or ["todo"])[0]
             srt = (q.get("sort") or ["newest"])[0]
@@ -1006,65 +1076,79 @@ class Handler(BaseHTTPRequestHandler):
             # The usual cause is on the org side, not the user's: a GitHub App not yet
             # installed on the org, or an OAuth App blocked by the org's third-party access
             # restrictions. Say that, rather than "bad token".
+            OAUTH_BLOCKED.write_text(str(int(time.time())))
             return self.login_page(nxt, (
                 f"<div class='banner err'><span>🚫</span><div><b>GitHub signed you in, but the "
                 f"token cannot see <code>{html.escape(REPO)}</code>.</b><br>An org owner needs "
                 f"to allow this app once: for an OAuth App, approve it under the org's "
                 f"<em>Third-party access</em> settings; for a GitHub App, install it on the org. "
                 f"Until then, sign in with a token below.</div></div>"))
+        OAUTH_BLOCKED.unlink(missing_ok=True)
         prev = load_users().get(login) or {}
         oauth_store(login, d, name, prev)
         print(f"login (github): {login}", flush=True)
-        # First sign-in with no Slack ID: land on settings so the ping actually reaches them.
+        # First time in: finish the two remaining connections before landing in the queue.
         if not prev.get("slack_id"):
-            nxt = "/prbot/settings"
+            nxt = "/prbot/settings?welcome=1&next=" + quote(nxt, safe="")
         return self.redirect(nxt, cookie=session_cookie(login))
 
     def login_page(self, nxt="/prbot/", banner=""):
         if not nxt.startswith("/prbot/"):
             nxt = "/prbot/"
-        github_btn = ""
-        if OAUTH_ENABLED:
-            github_btn = (
+        # GitHub's new-token page accepts the scope and name in the URL, so the person only
+        # has to pick an expiry and click Generate — no hunting for the right checkbox.
+        new_tok = "https://github.com/settings/tokens/new?" + urlencode(
+            {"scopes": "repo", "description": f"PR review bot ({ENV.get('PRBOT_ENV', 'prbot')})"})
+        github = ""
+        if OAUTH_ENABLED and oauth_blocked():
+            github = (
+                "<div class='card ghwait' style='margin-bottom:14px'><div class=meta>"
+                "<span class='pill archived'>awaiting org approval</span></div>"
+                "<p class='muted sm' style='margin:8px 0 0'><b>Sign in with GitHub</b> is set "
+                "up but an org owner has not approved the app yet. Use a token below — it "
+                "takes about a minute — and the button will work for everyone once they do."
+                "</p></div>")
+        elif OAUTH_ENABLED:
+            github = (
                 "<div class=card style='margin-bottom:14px'>"
-                "<h4 style='margin-top:0'>Sign in with GitHub</h4>"
-                "<p class='muted sm'>One click. GitHub issues this dashboard a short-lived "
-                "token that acts as you — comments and approvals carry your name. Nothing to "
-                "paste, nothing to rotate.</p>"
-                f"<p><a class='btn primary' href='/prbot/oauth/start?next={quote(nxt, safe='')}'>"
-                "Sign in with GitHub</a></p></div>"
-                "<details><summary>Or sign in with a token instead</summary><div class=dbody>")
+                f"<p style='margin:0 0 10px'><a class='btn primary' "
+                f"href='/prbot/oauth/start?next={quote(nxt, safe='')}'>Sign in with GitHub</a></p>"
+                "<p class='muted sm' style='margin:0'>One click. GitHub issues a short-lived "
+                "token that acts as you; nothing to paste.</p></div>"
+                "<p class='muted sm' style='text-align:center;margin:10px 0'>or</p>")
         body = (
             "<h1>PR review bot</h1>"
-            f"<p class='muted sm'>Reviewing <code>{html.escape(REPO)}</code></p>" + banner
-            + github_btn
-            + "<div class=card><form method=post action='/prbot/login'>"
-              "<h4 style='margin-top:0'>Sign in with your GitHub token</h4>"
-              "<p class='muted sm'>A <b>classic</b> personal access token with the "
-              "<code>repo</code> scope — GitHub → Settings → Developer settings → Tokens "
-              "(classic). It is used for exactly one thing: posting the comments and "
-              "approvals <em>you</em> choose, under <em>your</em> name. Stored encrypted on "
-              "this box; never shown again.</p>"
-              "<label class='muted sm'>GitHub token</label>"
-              "<textarea class=short name=pat placeholder='ghp_…' required "
-              "style='min-height:52px'></textarea>"
-              "<label class='muted sm'>Slack member ID <span class=muted>(optional — so "
-              "review requests ping you)</span></label>"
-              "<textarea class=short name=slack_id placeholder='U0123ABCDEF' "
-              "style='min-height:52px'></textarea>"
-              "<p class='muted sm'>Find it in Slack: your profile → ⋮ → <b>Copy member ID</b>."
-              "</p>"
+            "<p class=lead>Sign in once. Every comment and approval you post goes out under "
+            "your own GitHub name — nothing is ever posted for you.</p>" + banner + github
+            + "<div class=card>"
+              "<h4 style='margin-top:0'>Sign in with a token</h4>"
+              "<ol class=steps>"
+              "<li><h5>Create a token on GitHub</h5>"
+              f"<p style='margin:0'><a class=btn target=_blank rel=noopener href='{new_tok}'>"
+              "Create token on GitHub ↗</a></p>"
+              "<div class=hint>Opens GitHub with everything pre-filled (scope <code>repo</code>, "
+              "name <em>PR review bot</em>). Pick an expiry — 90 days is fine — click "
+              "<b>Generate token</b>, and copy it.</div></li>"
+              "<li><h5>Paste it here</h5>"
+              "<form method=post action='/prbot/login'>"
+              "<div class=field><input type=password id=pat name=pat placeholder='ghp_…' "
+              "autocomplete=off spellcheck=false autofocus required>"
+              "<button type=button class='btn ghost sm' onclick=\"peek('pat',this)\">show"
+              "</button></div>"
+              "<div class=hint id=pathint></div>"
               f"<input type=hidden name=next value='{html.escape(nxt)}'>"
-              "<p><button class='btn primary' type=submit>Sign in</button></p>"
-              "</form></div>"
-            + ("</div></details>" if OAUTH_ENABLED else "")
-            + "<p class='muted sm'>Reviews themselves run on the shared team runner — there "
-              "is nothing to connect for that.</p>")
+              "<p style='margin:12px 0 0'><button class='btn primary' id=go type=submit "
+              "data-busy='Checking with GitHub…' disabled>Sign in</button></p>"
+              "</form></li></ol>"
+              "<p class=fine>Stored encrypted on this box and used for one thing: posting the "
+              "comments and approvals you tick. Revoke it any time at "
+              "github.com/settings/tokens.</p>"
+              "</div>")
         return self.reply(200, shell("Sign in", body))
 
     def do_login(self, form):
         one = lambda k: (form.get(k) or [""])[0]  # noqa: E731
-        pat, slack_id, nxt = one("pat").strip(), one("slack_id").strip(), one("next")
+        pat, nxt = one("pat").strip(), one("next")
         if not pat:
             return self.login_page(nxt, "<div class='banner warn'><span>⚠️</span><div>Paste "
                                         "a token.</div></div>")
@@ -1074,64 +1158,114 @@ class Handler(BaseHTTPRequestHandler):
                                         f"{html.escape(err)}</div></div>")
         users = load_users()
         prev = users.get(login) or {}
-        users[login] = {"pat_enc": enc(pat), "name": name,
-                        "slack_id": slack_id or prev.get("slack_id", ""),
-                        "added": prev.get("added") or int(time.time()),
-                        "updated": int(time.time())}
+        u = dict(prev)
+        u.update({"pat_enc": enc(pat), "name": name,
+                  "added": prev.get("added") or int(time.time()), "updated": int(time.time())})
+        users[login] = u
         save_users(users)
         print(f"login: {login}", flush=True)
         if not nxt.startswith("/prbot/"):
             nxt = "/prbot/"
+        # First time in: finish the two remaining connections before landing in the queue.
+        if not prev.get("slack_id"):
+            nxt = "/prbot/settings?welcome=1&next=" + quote(nxt, safe="")
         return self.redirect(nxt, cookie=session_cookie(login))
 
-    def settings_page(self, user, banner=""):
+    def settings_page(self, user, banner="", welcome=False, nxt="/prbot/"):
         u = load_users().get(user) or {}
         exp, sig = mint("settings", user, ACTION_TTL)
+        if not nxt.startswith("/prbot/"):
+            nxt = "/prbot/"
+        has_slack, has_claude = bool(u.get("slack_id")), bool(u.get("claude_token_enc"))
+        how_gh = "GitHub sign-in" if u.get("gh_token_enc") else "token"
+
+        def ck(done, title, sub):
+            return (f"<div class='ck {'done' if done else 'todo'}'><span class=m>"
+                    f"{'✓' if done else '○'}</span><div class=t><b>{title}</b>"
+                    f"<span>{sub}</span></div></div>")
+        checklist = ("<div class=checklist>"
+                     + ck(True, f"GitHub — connected as {html.escape(user)}",
+                          f"via {how_gh}. Comments and approvals post under this name.")
+                     + ck(has_slack, "Slack — so review requests ping you",
+                          "Connected." if has_slack else
+                          "One paste, below. Without it cards still appear in the channel, "
+                          "but nothing notifies you.")
+                     + ck(has_claude, "Claude — run your reviews on your own account (optional)",
+                          "Connected." if has_claude else
+                          "Otherwise reviews you start use the shared team runner. Fine to skip.")
+                     + "</div>")
+
+        if welcome:
+            head = (f"<h1>You're in, {html.escape(u.get('name') or user)}.</h1>"
+                    "<p class=lead>Two more things make this work well. The first takes ten "
+                    "seconds; the second is optional.</p>")
+            done_link = (f"<a class=btn href='{html.escape(nxt)}'>Skip for now → queue</a>")
+        else:
+            head = (f"<p class=crumb><a href='/prbot/'>← queue</a></p><h1>Settings</h1>"
+                    f"<p class='muted sm'>Signed in as <code>{html.escape(user)}</code></p>")
+            done_link = "<a class=btn href='/prbot/logout'>Sign out</a>"
+
         body = (
-            f"<p class=crumb><a href='/prbot/'>← queue</a></p><h1>Settings</h1>"
-            f"<p class='muted sm'>Signed in as <code>{html.escape(user)}</code></p>" + banner
+            head + banner + checklist
             + "<div class=card><form method=post action='/prbot/settings'>"
-              "<h4 style='margin-top:0'>Slack</h4>"
-              "<p class='muted sm'>Cards for PRs awaiting your review will @-mention this "
-              "member ID. Your profile → ⋮ → <b>Copy member ID</b>.</p>"
-              f"<textarea class=short name=slack_id style='min-height:52px'>"
-              f"{html.escape(u.get('slack_id', ''))}</textarea>"
-              "<h4>GitHub</h4>"
-            + ("<p class='muted sm'>Signed in with GitHub — your token is issued by GitHub "
-               "and refreshed automatically. You can still paste a personal token below to "
-               "use that instead.</p>" if u.get("gh_token_enc") else
-               "<p class='muted sm'>Leave blank to keep the current token. Paste a new one "
-               "to replace it.</p>")
-            + 
-              "<textarea class=short name=pat placeholder='ghp_… (optional)' "
-              "style='min-height:52px'></textarea>"
-              "<h4>Claude</h4>"
-            + (("<p class='muted sm'>✓ <b>Connected</b> — reviews you start run on your own "
-                f"Claude account (added {fmt_date(u.get('claude_added', 0))}).</p>"
-                "<p class=sm><label><input type=checkbox name=claude_disconnect> Disconnect "
-                "and go back to the shared runner</label></p>")
-               if u.get("claude_token_enc") else
-               "<p class='muted sm'>Reviews you start currently run on the <b>shared team "
-               "runner</b>. To run them on your own Claude account instead, on your laptop run "
-               "<code>claude setup-token</code> — it opens your browser, you sign in with your "
-               "Claude account, and it prints a token. Paste it here. There is no sign-in "
-               "button for this: Anthropic offers no third-party login, and this is the "
-               "mechanism it documents for handing a subscription to automation.</p>")
-            + "<textarea class=short name=claude_token placeholder='sk-ant-oat01-… (optional)' "
-              "style='min-height:52px'></textarea>"
-              "<p class='muted sm'>Verified with one tiny call before it is stored (encrypted, "
-              "like your GitHub token). Only reviews <em>you</em> click to start use it.</p>"
+              "<ol class=steps>"
+              # -- slack -------------------------------------------------------------------
+              "<li><h5>Slack member ID</h5>"
+              "<div class=field><input type=text id=slack_id name=slack_id "
+              f"placeholder='U0123ABCDEF' value='{html.escape(u.get('slack_id', ''))}' "
+              "autocomplete=off spellcheck=false></div>"
+              "<div class=hint id=slackhint></div>"
+              "<div class=hint>In Slack: click your <b>profile picture</b> → <b>Profile</b> → "
+              "the <b>⋮</b> menu → <b>Copy member ID</b>. It starts with <code>U</code>.</div>"
+              "</li>"
+              # -- claude ------------------------------------------------------------------
+              "<li><h5>Claude account <span class='muted sm'>(optional)</span></h5>"
+            + (("<div class=hint ok>✓ Connected "
+                f"{fmt_date(u.get('claude_added', 0))} — reviews you start run on your own "
+                "account.</div>"
+                "<p class=sm style='margin:8px 0 0'><label><input type=checkbox "
+                "name=claude_disconnect> Disconnect and go back to the shared runner</label></p>")
+               if has_claude else
+               ("<div class=hint>On your laptop run <code>claude setup-token</code> — it opens "
+                "your browser, you sign in with your Claude account, and it prints a token. "
+                "Paste it here and reviews <em>you</em> start bill to your plan instead of the "
+                "shared one.</div>"
+                "<div class=field style='margin-top:8px'><input type=password id=ctok "
+                "name=claude_token placeholder='sk-ant-oat01-…' autocomplete=off "
+                "spellcheck=false><button type=button class='btn ghost sm' "
+                "onclick=\"peek('ctok',this)\">show</button></div>"
+                "<div class=hint>Checked with one tiny call before it is saved.</div>"))
+            + "</li>"
+              # -- github ------------------------------------------------------------------
+              "<li><h5>GitHub token <span class='muted sm'>(only to replace it)</span></h5>"
+            + ("<div class=hint>You signed in with GitHub, so this is already handled and "
+               "refreshed automatically. Paste a personal token only if you want to use that "
+               "instead.</div>" if u.get("gh_token_enc") else
+               "<div class=hint>Leave blank to keep the current one. Paste a new token to "
+               "rotate it — for example when the old one expires.</div>")
+            + "<div class=field style='margin-top:8px'><input type=password id=gtok name=pat "
+              "placeholder='ghp_…' autocomplete=off spellcheck=false>"
+              "<button type=button class='btn ghost sm' onclick=\"peek('gtok',this)\">show"
+              "</button></div></li>"
+              "</ol>"
               f"<input type=hidden name=exp value='{exp}'>"
               f"<input type=hidden name=sig value='{sig}'>"
-              "<p><button class='btn primary' type=submit>Save</button> "
-              "<a class=btn href='/prbot/logout'>Sign out</a></p>"
+              f"<input type=hidden name=welcome value='{'1' if welcome else ''}'>"
+              f"<input type=hidden name=next value='{html.escape(nxt)}'>"
+              "<p style='margin:18px 0 0'><button class='btn primary' type=submit "
+              "data-busy='Saving…'>Save</button> " + done_link + "</p>"
               "</form></div>")
-        return self.reply(200, shell("Settings", body))
+        return self.reply(200, shell("Welcome" if welcome else "Settings", body))
 
     def do_settings(self, user, form):
         one = lambda k: (form.get(k) or [""])[0]  # noqa: E731
         if err := verify("settings", user, one("exp"), one("sig")):
             return self.deny(err)
+        welcome, nxt = bool(one("welcome")), one("next") or "/prbot/"
+
+        def again(msg):
+            return self.settings_page(user, f"<div class='banner err'><span>🚫</span><div>{msg}"
+                                            f"</div></div>", welcome=welcome, nxt=nxt)
         users = load_users()
         u = users.get(user) or {}
         u["slack_id"] = one("slack_id").strip()
@@ -1139,13 +1273,9 @@ class Handler(BaseHTTPRequestHandler):
         if pat:
             login, name, err = verify_pat(pat)
             if err:
-                return self.settings_page(user, f"<div class='banner err'><span>🚫</span>"
-                                                f"<div>{html.escape(err)}</div></div>")
+                return again(html.escape(err))
             if login != user:
-                return self.settings_page(user, f"<div class='banner err'><span>🚫</span>"
-                                                f"<div>That token belongs to <code>"
-                                                f"{html.escape(login)}</code>, not you.</div>"
-                                                f"</div>")
+                return again(f"That token belongs to <code>{html.escape(login)}</code>, not you.")
             u["pat_enc"], u["name"] = enc(pat), name
         if one("claude_disconnect"):
             u.pop("claude_token_enc", None)
@@ -1154,15 +1284,16 @@ class Handler(BaseHTTPRequestHandler):
         if ctok:
             ok, why = verify_claude_token(ctok)
             if not ok:
-                return self.settings_page(user, f"<div class='banner err'><span>🚫</span>"
-                                                f"<div>Claude did not accept that token: "
-                                                f"<code>{html.escape(why)}</code></div></div>")
+                return again(f"Claude did not accept that token: <code>{html.escape(why)}</code>")
             u["claude_token_enc"], u["claude_added"] = enc(ctok), int(time.time())
         u["updated"] = int(time.time())
         users[user] = u
         save_users(users)
+        # Onboarding done: straight to the queue. Otherwise stay here with confirmation.
+        if welcome and u["slack_id"]:
+            return self.redirect(nxt if nxt.startswith("/prbot/") else "/prbot/")
         return self.settings_page(user, "<div class='banner ok'><span>✓</span><div>Saved."
-                                        "</div></div>")
+                                        "</div></div>", welcome=welcome, nxt=nxt)
 
     # -- pages -------------------------------------------------------------------------------
     def index_page(self, user, tab="todo", sort="newest"):
