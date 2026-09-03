@@ -47,6 +47,7 @@ echo "$meta" | jq -r .headRefOid > "$DIR/head"
 # Base clone lives under $ROOT, deliberately NOT the rsync target
 # (/var/local/cut-dry/current/) — `staging:dev`'s --delete would otherwise wipe a
 # worktree mid-review.
+status "checking out the branch"
 git -C "$BASE" fetch -q origin "$branch" || fail "could not fetch $branch"
 wt="$WT/$PR"
 git -C "$BASE" worktree remove --force "$wt" 2>/dev/null || true
@@ -60,7 +61,7 @@ status "queued — waiting for another review to finish"
 exec 8>"$ROOT/review.lock"
 flock 8
 
-status "reviewing"
+status "reviewing the diff"
 # Whose Claude account this runs on: the dashboard sets PRBOT_RUN_AS (and, for a connected
 # user, CLAUDE_CODE_OAUTH_TOKEN) when it spawns us. Recorded so the page can say so.
 echo "${PRBOT_RUN_AS:-shared}" > "$DIR/runner"
@@ -82,7 +83,10 @@ CONTRACT="Do NOT print a table and do NOT post anything to GitHub. Write your fi
 ./review.json as a single JSON object: {\"event\":\"COMMENT\", \"summary\":\"…\", \"explainer\":
 \"what this PR does\", \"analysis\":\"what you checked and what you dropped\", \"comments\":[{
 \"path\":\"file\", \"line\":123, \"severity\":\"blocker|should-fix|nit|question\", \"body\":
-\"markdown comment\", \"reply_to\":null, \"suggestion\":null}]}. When a finding has a concrete,
+\"markdown comment\", \"reply_to\":null, \"suggestion\":null, \"confidence\":\"high|medium|low\"}]}.
+Set \"confidence\" to how sure you are the finding is real and worth raising — low-confidence
+findings are shown to the reviewer in a separate collapsed \"maybe\" tray, so use it honestly
+rather than dropping a borderline point. When a finding has a concrete,
 correct fix that replaces the SINGLE line you set in \"line\", put the exact replacement line
 (matching its indentation) in \"suggestion\" — the reviewer can post it as a one-click GitHub
 suggestion. Only when confident and single-line; otherwise leave \"suggestion\" null. A human

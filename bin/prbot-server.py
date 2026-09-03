@@ -44,6 +44,7 @@ from urllib.request import Request, urlopen
 
 import prbot_assets
 import prbot_diff
+import prbot_howimg
 import prbot_learn
 import prbot_md
 
@@ -757,8 +758,6 @@ box-shadow:var(--shadow);transition:transform .15s,border-color .15s;display:blo
 .stat .l{color:var(--dim);font-size:.86rem;margin-top:6px;display:flex;align-items:center;gap:6px}
 .stat.on{border-color:var(--purple);box-shadow:0 0 0 1px rgba(168,85,247,.3),var(--shadow)}
 .tabdesc{color:var(--dim);font-size:.88rem;margin:12px 2px 14px;min-height:1.2em}
-.chev{align-self:center;color:var(--faint);padding:0 16px;font-size:1.1rem;flex:none}
-.row:hover .chev{color:var(--blue)}
 .empty{padding:44px 20px;text-align:center;color:var(--dim)}
 .empty .ic{font-size:2rem;display:block;margin-bottom:8px;opacity:.7}
 .empty b{color:var(--fg);display:block;font-weight:600;margin-bottom:3px}
@@ -825,6 +824,24 @@ background:rgba(61,220,151,.05)}
 .sugglabel{padding:8px 12px;font-size:.8rem;color:#8fecc2;border-bottom:1px solid rgba(61,220,151,.2)}
 .suggin{border:0;border-radius:0;background:#0a1a13;min-height:52px;color:#c7f2dd}
 .suggin:focus{box-shadow:none;outline:none}
+.maybe{margin:14px 0 0;border-style:dashed;border-color:var(--line)}
+.maybe>summary{color:var(--dim);font-weight:600}
+.maybe .finding{margin:10px 0}
+/* review progress panel */
+.prog-hd{font-size:1.05rem;font-weight:600;margin-bottom:14px}
+.prog{list-style:none;padding:0;margin:0}
+.prog li{display:flex;align-items:center;gap:12px;padding:8px 0;color:var(--faint);font-size:.95rem}
+.prog li.done{color:var(--dim)}.prog li.now{color:var(--fg);font-weight:550}
+.prog .pm{width:20px;height:20px;flex:none;display:inline-flex;align-items:center;
+justify-content:center;font-size:.85rem}
+.prog li.done .pm{color:#6fe6b2}
+.prog .pm.spin{width:15px;height:15px;border:2px solid rgba(139,164,255,.3);border-top-color:var(--blue);
+border-radius:50%;animation:spin .7s linear infinite}
+.progbar{height:6px;border-radius:999px;background:var(--panel2);overflow:hidden;margin:16px 0 2px;
+position:relative}
+.progfill{position:absolute;left:0;top:0;height:100%;width:36%;border-radius:999px;
+background:var(--grad);animation:slide 1.5s ease-in-out infinite}
+@keyframes slide{0%{left:-36%}100%{left:100%}}
 /* inputs */
 textarea{width:100%;background:#0b0d15;color:var(--fg);border:1px solid var(--line);
 border-radius:11px;padding:12px 14px;font:13px/1.6 var(--mono);resize:vertical;min-height:150px;
@@ -847,10 +864,10 @@ cursor:pointer;font-weight:600;font-family:inherit;letter-spacing:-.01em;
 transition:transform .15s cubic-bezier(.2,.7,.2,1),background .15s,border-color .15s,box-shadow .15s}
 .btn:hover{background:#2a3145;transform:translateY(-1px)}
 .btn:active{transform:translateY(0)}
-.btn.primary{background:var(--grad);border-color:transparent;color:#fff;background-size:140% 140%}
-.btn.primary:hover{background-position:100% 0;transform:translateY(-1px)}
-.btn.warn{background:linear-gradient(135deg,#f0506a,#ec4899);border-color:transparent;color:#fff}
-.btn.warn:hover{filter:brightness(1.06)}
+.btn.primary{background:#5b56e0;border-color:transparent;color:#fff}
+.btn.primary:hover{background:#6a65ec;transform:translateY(-1px)}
+.btn.warn{background:#e5495f;border-color:transparent;color:#fff}
+.btn.warn:hover{background:#ef5468}
 .btn.ghost{background:transparent;border-color:transparent;color:var(--dim)}
 .btn.ghost:hover{background:var(--panel2);color:var(--fg)}
 .btn.sm{padding:7px 13px;font-size:.82rem;border-radius:9px}
@@ -908,15 +925,18 @@ border-radius:999px;padding:5px 13px}
 /* queue list */
 .list{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;
 box-shadow:var(--shadow)}
-.row{display:flex;align-items:stretch;border-bottom:1px solid var(--line2);transition:background .13s}
+.row{display:flex;align-items:center;border-bottom:1px solid var(--line2);transition:background .13s}
 .row:last-child{border-bottom:0}
 .row:hover{background:var(--panel2)}
-.rowact{align-self:center;flex:none;font-size:.78rem;color:var(--dim);padding:6px 13px;
-margin-right:10px;border:1px solid var(--line2);border-radius:9px;white-space:nowrap;
-transition:background .13s,color .13s}
+.rowmeta{display:flex;align-items:center;gap:12px;flex:none;padding-right:14px}
+.rowmeta .pill{min-width:78px;justify-content:center}
+.rowact{font-size:.78rem;color:var(--dim);padding:6px 13px;border:1px solid var(--line2);
+border-radius:9px;white-space:nowrap;transition:background .13s,color .13s}
 .rowact:hover{color:var(--fg);background:var(--panel2)}
-.rowlink{display:block;flex:1;min-width:0;padding:15px 18px}
+.rowlink{display:block;flex:1;min-width:0;padding:15px 4px 15px 18px}
 .rowlink:hover{text-decoration:none}
+.chev{color:var(--faint);font-size:1.2rem;flex:none;line-height:1}
+.row:hover .chev{color:var(--blue)}
 .rowtop{display:flex;gap:10px;align-items:center;margin-bottom:4px}
 .num{font-family:var(--mono);font-weight:650;background:var(--grad);-webkit-background-clip:text;
 background-clip:text;-webkit-text-fill-color:transparent}
@@ -1003,7 +1023,7 @@ font:13.5px/1.4 var(--mono);color:var(--fg);transition:border-color .16s,box-sha
 .in:focus{outline:0;border-color:var(--purple);box-shadow:0 0 0 3px rgba(168,85,247,.16)}
 .inrow{display:flex;gap:9px;align-items:stretch}.inrow .in{flex:1;min-width:0}
 .intg .btn{background:#252c40}.intg .btn:hover{background:#2e3650}
-.intg .btn.primary{background:var(--grad);background-size:140% 140%}
+.intg .btn.primary{background:#5b56e0}.intg .btn.primary:hover{background:#6a65ec}
 .discbtn{background:none;border:0;color:var(--faint);font-size:.83rem;font-weight:600;cursor:pointer;
 padding:6px 0;margin-top:8px}.discbtn:hover{color:var(--err)}
 .replace{background:none;border:0;color:var(--blue);font-size:.85rem;font-weight:600;cursor:pointer;
@@ -1026,8 +1046,9 @@ box-shadow:0 4px 12px -4px rgba(168,85,247,.6)}
 .fstep:not(:last-child) .fn::after{content:"";position:absolute;top:34px;left:50%;transform:translateX(-50%);
 width:2px;height:calc(100% - 8px);background:linear-gradient(var(--line),transparent)}
 .fstep .fb{flex:1;padding-top:4px}.fstep .fb h4{margin:0 0 5px}
-.shot{margin:12px 0 0;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel2)}
-.shot img{display:block;width:100%}
+.shot{margin:12px 0 0;width:fit-content;max-width:100%;border:1px solid var(--line);
+border-radius:10px;overflow:hidden;box-shadow:var(--shadow)}
+.shot img{display:block;width:430px;max-width:100%}
 .shot .cap{padding:8px 12px;font-size:.8rem;color:var(--faint);border-top:1px solid var(--line2)}
 .shot.ph{padding:22px;text-align:center;color:var(--faint);font-size:.85rem;border-style:dashed}
 .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:14px 0}
@@ -1712,20 +1733,7 @@ class Handler(BaseHTTPRequestHandler):
         skill_svg = ("<svg viewBox='0 0 24 24' width=22 height=22 fill=none stroke=currentColor "
                      "stroke-width=1.8 stroke-linecap=round stroke-linejoin=round>"
                      "<path d='M16 18l6-6-6-6M8 6l-6 6 6 6'/></svg>")
-        skill_ctl = (
-            "<form method=post action='/prbot/skill/save'>"
-            "<textarea class=in name=skill spellcheck=false style='min-height:120px;font-size:12.5px'"
-            f" placeholder='Paste your pr-review SKILL.md here — or leave blank for the global "
-            f"default.'>{html.escape(my_skill)}</textarea>"
-            "<div class=hint>Your skill's <em>logic</em> runs; Robin always appends its own "
-            "output format, so any review skill works. Reviews others start are unaffected.</div>"
-            + hidden
-            + "<div class=inrow style='margin-top:10px'>"
-              "<button class='btn primary' type=submit data-busy='Saving…'>Save skill</button>"
-            + ("<button class='btn soft' type=submit form=skillreset>Reset to global</button>"
-               if my_skill else "") + "</div></form>"
-            + (f"<form id=skillreset method=post action='/prbot/skill/reset'>{hidden}</form>"
-               if my_skill else ""))
+        skill_ctl = self.skill_control(user, exp, sig)
         skill_chip = ("<span class=tag-on>Custom</span>" if my_skill
                       else "<span class=tag-off>Global default</span>")
         skill_card = card("skill", skill_svg, "Review skill", skill_chip,
@@ -1752,32 +1760,35 @@ class Handler(BaseHTTPRequestHandler):
         return self.reply(200, shell("Integrations", body, user=user, active="integrations"))
 
     def how_page(self, user):
-        def fstep(n, title, txt, shot=None):
-            s = ""
-            if shot:
-                s = (f"<div class='shot ph'>{shot}</div>")
+        def fstep(n, title, txt, img=None):
+            s = (f"<div class=shot><img src='{prbot_howimg.IMG[img]}' alt='' loading=lazy></div>"
+                 if img else "")
             return (f"<div class=fstep><div class=fn>{n}</div><div class=fb>"
                     f"<h4>{title}</h4><div class='muted sm'>{txt}</div>{s}</div></div>")
         flow = ("<div class=flow>"
                 + fstep(1, "A review is requested",
                         "A teammate adds you as a reviewer on a PR. Robin notices within 3 "
                         "minutes and sends you a Slack card — no need to watch GitHub.",
-                        "Screenshot: the Slack review card")
+                        "slack")
                 + fstep(2, "Robin drafts the review",
                         "You click through to the PR. Robin checks out the branch and runs the "
                         "<code>pr-review</code> skill against the real diff — about 10–15 "
-                        "minutes for a 25-file PR. Nothing is posted to GitHub in this step.")
+                        "minutes for a 25-file PR. Nothing is posted to GitHub in this step.",
+                        "progress")
                 + fstep(3, "You decide what's worth saying",
                         "The findings appear as editable cards, each with a severity and a "
                         "<code>file:line</code>. Tick the ones you agree with, edit any wording, "
-                        "ignore the rest.")
+                        "ignore the rest.",
+                        "findings")
                 + fstep(4, "Post — as you",
                         "The selected comments post to the PR as inline review comments under "
                         "your own GitHub name. Always a plain COMMENT review — Robin never "
-                        "requests changes or blocks a merge.")
+                        "requests changes or blocks a merge.",
+                        "post")
                 + fstep(5, "Approve when you're ready",
                         "A separate click posts an LGTM comment and approves the PR, also as "
-                        "you. This is what stops the 'posted comments, forgot to approve' loop.")
+                        "you. This is what stops the 'posted comments, forgot to approve' loop.",
+                        "approve")
                 + "</div>")
         guarantees = ("<div class=grid2>"
                       "<div class=mini><div class=t>🧑 Always you</div><div class='muted sm'>"
@@ -1947,16 +1958,49 @@ class Handler(BaseHTTPRequestHandler):
         return back("<div class='banner ok'><span>✓</span><div>Saved — reviews you start now use "
                     "your skill (with Robin's output format appended).</div></div>")
 
+    def skill_control(self, user, exp, sig):
+        """The paste/save/reset control for a user's review skill, shown on both Integrations
+        and the Skills page. Includes the one-liner to copy a local skill onto the clipboard."""
+        my_skill = user_skill(user)
+        hidden = (f"<input type=hidden name=exp value='{exp}'>"
+                  f"<input type=hidden name=sig value='{sig}'>")
+        return (
+            "<div class=hint>Load your local skill onto the clipboard, then paste it here:<br>"
+            "<code>cat ~/.claude/skills/pr-review/SKILL.md | pbcopy</code> (macOS) · "
+            "<code>… | xclip -selection clipboard</code> or <code>… | wl-copy</code> (Linux)."
+            "</div>"
+            "<form method=post action='/prbot/skill/save'>"
+            "<textarea class=in name=skill spellcheck=false style='min-height:130px;"
+            "font-size:12.5px;margin-top:8px' placeholder='Paste your pr-review SKILL.md here — "
+            f"or leave blank for the global default.'>{html.escape(my_skill)}</textarea>"
+            "<div class=hint>Your skill's <em>logic</em> runs; Robin always appends its own "
+            "output format, so any review skill works. Reviews others start are unaffected.</div>"
+            + hidden
+            + "<div class=inrow style='margin-top:10px'>"
+              "<button class='btn primary' type=submit data-busy='Saving…'>Save skill</button>"
+            + ("<button class='btn soft' type=submit form=skillreset>Reset to global</button>"
+               if my_skill else "") + "</div></form>"
+            + (f"<form id=skillreset method=post action='/prbot/skill/reset'>{hidden}</form>"
+               if my_skill else ""))
+
     def skills_page(self, user):
+        exp, sig = mint("settings", user, ACTION_TTL)
+        my_skill = user_skill(user)
+        skill_card = (
+            "<div class=card style='margin-bottom:6px'>"
+            "<h4 style='margin-top:0'>Your review skill "
+            + ("<span class=tag-on style='margin-left:6px'>Custom</span>" if my_skill
+               else "<span class=tag-off style='margin-left:6px'>Global default</span>")
+            + "</h4>" + self.skill_control(user, exp, sig) + "</div>")
         stats = prbot_learn.skill_stats()
         mine = bool(user_skill(user))
         head = (f"<h1>Review skills</h1>"
-                "<p class=lead>Which reviewing approach each person's reviews use, scored by how "
-                "often their findings are kept vs dropped as noise. Bring your own skill in "
-                "<a href='/prbot/integrations'>Integrations</a>.</p>")
+                "<p class=lead>Bring your own reviewing approach, and see how each person's "
+                "skill scores by how often its findings are kept vs dropped as noise.</p>"
+                + skill_card + "<h2>How each skill scores</h2>")
         if not stats:
-            body = head + ("<div class=empty><span class=ic>🧭</span><b>No data yet</b>Post a few "
-                           "reviews and each skill's kept-rate will show up here.</div>")
+            body = head + ("<div class=empty><span class=ic>🧭</span><b>No scores yet</b>Post a "
+                           "few reviews and each skill's kept-rate will show up here.</div>")
             return self.reply(200, shell("Skills", body, user=user, active="skills"))
         rows = []
         for d in stats:
@@ -2074,23 +2118,23 @@ class Handler(BaseHTTPRequestHandler):
             if item.get("changedFiles"):
                 size = (f"+{item.get('additions', 0):,} −{item.get('deletions', 0):,} · "
                         f"{item['changedFiles']} files")
+            act = (f"<a class=rowact href='{link('unarchive', num)}' "
+                   f"title='Move back to the queue'>restore</a>"
+                   if e["st"] == "archived" else
+                   f"<a class=rowact href='{link('archive', num)}' "
+                   f"title='Hide from the queue'>archive</a>")
             rows.append(
                 f"<div class=row><a class=rowlink href='{link('pr', num)}'>"
                 f"<div class=rowtop><span class=num>#{num}</span>"
-                f"<span class=ttl>{html.escape(item.get('title', ''))}</span>"
-                f"{pill(e['st'])}</div>"
+                f"<span class=ttl>{html.escape(item.get('title', ''))}</span></div>"
                 f"<div class='muted sm rowsub'>"
                 f"<span>{html.escape(item.get('author', ''))}</span>"
                 + (f"<span>{size}</span>" if size else "")
                 + "".join(f"<span>{html.escape(w)}</span>" for w in when)
                 + (f"<span class=chipwrap>{chips}</span>" if chips else "")
                 + "</div></a>"
-                + (f"<a class=rowact href='{link('unarchive', num)}' "
-                   f"title='Move back to the queue'>restore</a>"
-                   if e["st"] == "archived" else
-                   f"<a class=rowact href='{link('archive', num)}' "
-                   f"title='Hide from the queue'>archive</a>")
-                + f"<a class=chev href='{link('pr', num)}' aria-hidden=true>›</a></div>")
+                + f"<div class=rowmeta>{pill(e['st'])}{act}"
+                + f"<a class=chev href='{link('pr', num)}' aria-hidden=true>›</a></div></div>")
 
         empty = {
             "todo": ("🎉", "You're all caught up", "No PRs are waiting on your review."),
@@ -2206,11 +2250,30 @@ class Handler(BaseHTTPRequestHandler):
                 f"</div>"), user=user, active="queue"))
 
         if st == "reviewing":
-            s = (STATE / pr / "status").read_text().strip()
-            return self.reply(200, shell(f"#{pr}", head + (
-                f"<div class=card><h4>Working…</h4><p class='muted sm'>Status: <code>"
-                f"{html.escape(s)}</code>. This page refreshes itself; a 25-file PR takes "
-                f"10–15 minutes.</p></div>"), refresh=link("pr", pr), user=user, active="queue"))
+            s = (STATE / pr / "status").read_text().strip().lower()
+            phases = ["Fetching the PR", "Checking out the branch",
+                      "Reviewing the diff", "Writing the findings"]
+            cur = (0 if "fetch" in s else 1 if ("checking out" in s or "queued" in s)
+                   else 2 if "reviewing" in s else 3)
+            steps = []
+            for j, ph in enumerate(phases):
+                if j < cur:
+                    steps.append(f"<li class=done><span class=pm>✓</span>{ph}</li>")
+                elif j == cur:
+                    steps.append(f"<li class=now><span class='pm spin'></span>{ph}</li>")
+                else:
+                    steps.append(f"<li><span class=pm>○</span>{ph}</li>")
+            queued = ("<div class=hint>Waiting for another review to finish first — one runs at "
+                      "a time on this box.</div>" if "queued" in s else "")
+            panel = (
+                "<div class=card><div class=prog-hd>Drafting review for "
+                f"<b>#{pr}</b> · <span class='muted sm'>pr-review</span></div>"
+                f"<ul class=prog>{''.join(steps)}</ul>"
+                "<div class=progbar><div class=progfill></div></div>"
+                f"{queued}<div class='hint' style='margin-top:10px'>This page refreshes itself; "
+                "a 25-file PR takes about 10–15 minutes.</div></div>")
+            return self.reply(200, shell(f"#{pr}", head + panel, refresh=link("pr", pr),
+                                         user=user, active="queue"))
 
         rev = load_review(pr)
         if not rev:
@@ -2269,8 +2332,7 @@ class Handler(BaseHTTPRequestHandler):
             parts.append("<p class=sm><a href='javascript:all(true)'>select all</a> · "
                          "<a href='javascript:all(false)'>select none</a></p>")
 
-        fields = []
-        for i, c in enumerate(comments):
+        def finding_card(i, c, checked):
             sev = c.get("severity", "nit")
             loc = f"{c.get('path', '?')}:{c.get('line', '?')}"
             thread = (f"↩ reply to {html.escape(c['reply_to'])}" if c.get("reply_to")
@@ -2282,9 +2344,9 @@ class Handler(BaseHTTPRequestHandler):
                     "<div class=sugg><div class=sugglabel>💡 Suggested change — the author can "
                     "apply this in one click on GitHub</div>"
                     f"<textarea class=suggin name='sugg_{i}'>{html.escape(sugg)}</textarea></div>")
-            fields.append(
+            return (
                 f"<div class=finding><div class=fhead>"
-                f"<input type=checkbox class=fsel name='sel_{i}' id='sel_{i}' checked>"
+                f"<input type=checkbox class=fsel name='sel_{i}' id='sel_{i}'{' checked' if checked else ''}>"
                 f"<label for='sel_{i}'>{pill(sev, SEV_LABEL.get(sev, sev))}</label>"
                 f"<span class=loc>{html.escape(loc)}</span>"
                 f"<span class=thread>{thread}</span></div>"
@@ -2296,6 +2358,19 @@ class Handler(BaseHTTPRequestHandler):
                 f"<input type=hidden name='sev_{i}' value='{html.escape(sev)}'>"
                 f"</div></div>")
 
+        # Low-confidence findings go into a collapsed "Maybe" tray, unchecked, so they add no
+        # noise but stay one click away. Everything else is checked by default.
+        fields, maybe = [], []
+        for i, c in enumerate(comments):
+            low = c.get("confidence") == "low"
+            (maybe if low else fields).append(finding_card(i, c, checked=not low))
+        maybe_tray = ""
+        if maybe:
+            maybe_tray = (
+                f"<details class=maybe><summary>🤔 Maybe — {len(maybe)} lower-confidence "
+                "finding" + ("s" if len(maybe) != 1 else "") + " (unchecked)</summary>"
+                "<div class=dbody>" + "".join(maybe) + "</div></details>")
+
         posted = upath(pr, user, "posted.json").exists()
         posted_note = ("<div class='banner ok'><span>✓</span><div>You already posted this to "
                        "GitHub. Posting again adds a second review.</div></div>"
@@ -2303,7 +2378,7 @@ class Handler(BaseHTTPRequestHandler):
         label = "Post selected" + (" (dry run)" if DRY_RUN else " to GitHub")
         parts.append(
             f"<form method=post action='/prbot/post'>{posted_note}"
-            + "".join(fields)
+            + "".join(fields) + maybe_tray
             + f"<input type=hidden name=pr value='{pr}'>"
               f"<input type=hidden name=exp value='{exp_p}'>"
               f"<input type=hidden name=sig value='{sig_p}'>"

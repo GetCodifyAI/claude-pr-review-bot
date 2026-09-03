@@ -101,6 +101,7 @@ if [ "$SRC" != "$BIN" ]; then
   install -m 0644 "$SRC"/prbot_md.py "$BIN/"
   install -m 0644 "$SRC"/prbot_assets.py "$BIN/"   # inlined brand logo + favicon
   install -m 0644 "$SRC"/prbot_learn.py "$BIN/"    # learnings loop (imported + run by shell)
+  install -m 0644 "$SRC"/prbot_howimg.py "$BIN/"   # how-it-works step mockups
   install -m 0644 "$SRC/lib-common.sh" "$BIN/"
 else
   echo "   (running from $BIN — nothing to copy)"
