@@ -20,7 +20,7 @@ ULI = re.compile(r"^\s*[-*]\s+(.*)$")
 def inline(s):
     """Escape, then apply inline markup. Escaping first keeps user text inert."""
     s = html.escape(s)
-    s = LINK.sub(r'<a href="\2" rel="noopener">\1</a>', s)
+    s = LINK.sub(r'<a href="\2" target="_blank" rel="noopener">\1</a>', s)
     s = CODE.sub(r"<code>\1</code>", s)
     s = BOLD.sub(r"<strong>\1</strong>", s)
     s = ITAL.sub(r"<em>\1</em>", s)

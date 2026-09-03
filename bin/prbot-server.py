@@ -1027,6 +1027,20 @@ background:linear-gradient(180deg,var(--panel2),var(--panel));border-bottom:1px 
 .loc{font-family:var(--mono);font-size:.82rem;color:#c3c9de;word-break:break-all}
 .thread{font-size:.75rem;color:var(--faint);margin-left:auto;white-space:nowrap}
 .fbody{padding:15px 18px}
+.ftabs{display:inline-flex;gap:2px;margin-bottom:9px;background:var(--panel2);border-radius:8px;
+padding:2px;border:1px solid var(--line)}
+.fmode{background:transparent;border:0;color:var(--dim);font-size:.78rem;font-weight:600;
+padding:4px 12px;border-radius:6px;cursor:pointer}
+.fmode.on{background:#0b0d15;color:var(--fg)}
+.fpreview{min-height:60px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;
+background:#0b0d15;font-size:.9rem;line-height:1.55}
+.fpreview p{margin:0 0 8px}.fpreview p:last-child{margin-bottom:0}
+.fpreview ul{margin:6px 0;padding-left:20px}.fpreview li{margin:2px 0}
+.fpreview code{font-family:var(--mono);font-size:.85em;background:var(--panel2);padding:1px 5px;
+border-radius:4px}
+.fpreview pre{background:var(--panel2);border:1px solid var(--line);border-radius:8px;
+padding:10px 12px;overflow-x:auto;margin:8px 0}.fpreview pre code{background:none;padding:0}
+.fpreview a{color:#9db4ff}
 .sugg{margin-top:10px;border:1px solid rgba(61,220,151,.28);border-radius:10px;overflow:hidden;
 background:rgba(61,220,151,.05)}
 .sugglabel{padding:8px 12px;font-size:.8rem;color:#8fecc2;border-bottom:1px solid rgba(61,220,151,.2)}
@@ -1373,6 +1387,36 @@ function upd(){
   if(s)s.disabled=(n===0);
 }
 function all(v){document.querySelectorAll('.fsel').forEach(function(c){c.checked=v});upd()}
+/* findings: preview (formatted) vs edit (code) — small markdown renderer for live preview */
+function _esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function mdrender(src){
+  var blocks=[];
+  var t=src.replace(/```(\w*)\n?([\s\S]*?)```/g,function(m,l,c){
+    blocks.push('<pre><code>'+_esc(c.replace(/\n$/,''))+'</code></pre>');
+    return ''+(blocks.length-1)+'';});
+  t=_esc(t)
+    .replace(/`([^`]+)`/g,'<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
+    .replace(/\[([^\]]+)\]\((https?:[^\s)]+)\)/g,
+             '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  var lines=t.split('\n'),html='',list=false,para=[];
+  function flush(){if(para.length){html+='<p>'+para.join('<br>')+'</p>';para=[];}}
+  for(var i=0;i<lines.length;i++){var ln=lines[i],ph=ln.match(/^(\d+)$/);
+    if(ph){flush();if(list){html+='</ul>';list=false;}html+=blocks[+ph[1]];continue;}
+    if(/^\s*[-*]\s+/.test(ln)){flush();if(!list){html+='<ul>';list=true;}
+      html+='<li>'+ln.replace(/^\s*[-*]\s+/,'')+'</li>';continue;}
+    if(/^\s*$/.test(ln)){flush();if(list){html+='</ul>';list=false;}continue;}
+    if(list){html+='</ul>';list=false;}para.push(ln);}
+  flush();if(list)html+='</ul>';
+  return html||'<p class=muted>Nothing to preview.</p>';
+}
+function fmode(el,edit){
+  var w=el.closest('.fbody'),pv=w.querySelector('.fpreview'),ta=w.querySelector('.fedit');
+  if(edit){ta.hidden=false;pv.hidden=true;}
+  else{pv.innerHTML=mdrender(ta.value);pv.hidden=false;ta.hidden=true;}
+  w.querySelectorAll('.fmode').forEach(function(b){b.classList.remove('on');});
+  el.classList.add('on');
+}
 document.addEventListener('change',function(e){if(e.target.classList.contains('fsel'))upd()});
 document.addEventListener('DOMContentLoaded',upd);
 function tokcheck(){
@@ -2683,7 +2727,8 @@ class Handler(BaseHTTPRequestHandler):
                 f"<div class=meta>{pill(st)}"
                 + (pill("dry", "dry run") if DRY_RUN else "") + eff_badge
                 + f"<span>{html.escape(meta.get('author', ''))}{size}</span>"
-                  f"<span>·</span><a href='{ghurl}'>open on GitHub</a>"
+                  f"<span>·</span><a href='{ghurl}' target=_blank rel=noopener>open on "
+                  f"GitHub</a>"
                 + ("" if active and user in requested_of(meta)
                    else "<span>· not awaiting your review</span>")
                 + "</div>" + self.timeline(pr, user) + banner)
@@ -2822,7 +2867,12 @@ class Handler(BaseHTTPRequestHandler):
                 f"<span class=loc>{html.escape(loc)}</span>"
                 f"<span class=thread>{thread}</span></div>"
                 f"<div class=fbody>"
-                f"<textarea name='body_{i}'>{html.escape(c.get('body', ''))}</textarea>"
+                "<div class=ftabs><button type=button class='fmode on' onclick='fmode(this,0)'>"
+                "Preview</button><button type=button class=fmode onclick='fmode(this,1)'>Edit"
+                "</button></div>"
+                f"<div class=fpreview>{prbot_md.render(c.get('body', ''))}</div>"
+                f"<textarea class=fedit name='body_{i}' hidden>"
+                f"{html.escape(c.get('body', ''))}</textarea>"
                 + sugg_box
                 + f"<input type=hidden name='path_{i}' value='{html.escape(c.get('path', ''))}'>"
                 f"<input type=hidden name='line_{i}' value='{c.get('line', '')}'>"
@@ -2858,7 +2908,6 @@ class Handler(BaseHTTPRequestHandler):
               f"<span class='muted sm'><b id=cnt>0</b> selected · posts as plain comments, "
               f"does not request changes</span>"
               f"<span class=spacer></span>"
-              f"<a class='btn ghost' href='#rerun'>Re-run…</a>"
               f"<button class='btn primary' id=submit type=submit>{label}</button>"
               f"</div></div></form>")
 
@@ -2916,7 +2965,8 @@ class Handler(BaseHTTPRequestHandler):
                 + (f"<p class='muted sm'>Comment posted with the approval:</p>"
                    f"<pre><code>{html.escape(said)}</code></pre>"
                    if said and not manual else "")
-                + f"<p><a class=btn href='{ghurl_of(pr)}'>View on GitHub</a></p></div>")
+                + f"<p><a class=btn href='{ghurl_of(pr)}' target=_blank rel=noopener>View on "
+                f"GitHub</a></p></div>")
 
     def footer_actions(self, pr, user):
         """Local-only housekeeping: never touches GitHub."""
@@ -3096,7 +3146,8 @@ class Handler(BaseHTTPRequestHandler):
                 f"from GitHub — nothing was posted.</b><br>Without it every comment would be "
                 f"demoted out of the diff and posted as a plain summary, so this refuses "
                 f"rather than posting a degraded review. Check "
-                f"<a href='https://www.githubstatus.com'>githubstatus.com</a> and retry.<br>"
+                f"<a href='https://www.githubstatus.com' target=_blank rel=noopener>"
+                f"githubstatus.com</a> and retry.<br>"
                 f"<code>{html.escape(err)}</code></div></div>"))
         inline, orphans = prbot_diff.split_anchorable(chosen, prbot_diff.anchor_map(files))
         # No bot signature: this posts under the reviewer's own account, so GitHub already
