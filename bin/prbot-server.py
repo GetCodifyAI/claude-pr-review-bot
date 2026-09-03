@@ -820,6 +820,11 @@ background:linear-gradient(180deg,var(--panel2),var(--panel));border-bottom:1px 
 .loc{font-family:var(--mono);font-size:.82rem;color:#c3c9de;word-break:break-all}
 .thread{font-size:.75rem;color:var(--faint);margin-left:auto;white-space:nowrap}
 .fbody{padding:15px 18px}
+.sugg{margin-top:10px;border:1px solid rgba(61,220,151,.28);border-radius:10px;overflow:hidden;
+background:rgba(61,220,151,.05)}
+.sugglabel{padding:8px 12px;font-size:.8rem;color:#8fecc2;border-bottom:1px solid rgba(61,220,151,.2)}
+.suggin{border:0;border-radius:0;background:#0a1a13;min-height:52px;color:#c7f2dd}
+.suggin:focus{box-shadow:none;outline:none}
 /* inputs */
 textarea{width:100%;background:#0b0d15;color:var(--fg);border:1px solid var(--line);
 border-radius:11px;padding:12px 14px;font:13px/1.6 var(--mono);resize:vertical;min-height:150px;
@@ -2270,6 +2275,13 @@ class Handler(BaseHTTPRequestHandler):
             loc = f"{c.get('path', '?')}:{c.get('line', '?')}"
             thread = (f"↩ reply to {html.escape(c['reply_to'])}" if c.get("reply_to")
                       else "new thread")
+            sugg = c.get("suggestion", "")
+            sugg_box = ""
+            if sugg:
+                sugg_box = (
+                    "<div class=sugg><div class=sugglabel>💡 Suggested change — the author can "
+                    "apply this in one click on GitHub</div>"
+                    f"<textarea class=suggin name='sugg_{i}'>{html.escape(sugg)}</textarea></div>")
             fields.append(
                 f"<div class=finding><div class=fhead>"
                 f"<input type=checkbox class=fsel name='sel_{i}' id='sel_{i}' checked>"
@@ -2278,7 +2290,8 @@ class Handler(BaseHTTPRequestHandler):
                 f"<span class=thread>{thread}</span></div>"
                 f"<div class=fbody>"
                 f"<textarea name='body_{i}'>{html.escape(c.get('body', ''))}</textarea>"
-                f"<input type=hidden name='path_{i}' value='{html.escape(c.get('path', ''))}'>"
+                + sugg_box
+                + f"<input type=hidden name='path_{i}' value='{html.escape(c.get('path', ''))}'>"
                 f"<input type=hidden name='line_{i}' value='{c.get('line', '')}'>"
                 f"<input type=hidden name='sev_{i}' value='{html.escape(sev)}'>"
                 f"</div></div>")
@@ -2399,10 +2412,16 @@ class Handler(BaseHTTPRequestHandler):
             if not form.get(f"sel_{i}"):
                 continue
             line = one(f"line_{i}")
+            body = one(f"body_{i}").strip()
+            # A suggested change becomes a GitHub ```suggestion block appended to the comment,
+            # which GitHub renders with a one-click "Apply" for the author on the anchored line.
+            sugg = one(f"sugg_{i}").rstrip("\n")
+            if sugg.strip():
+                body = f"{body}\n\n```suggestion\n{sugg}\n```"
             chosen.append({"path": one(f"path_{i}"),
                            "line": int(line) if line.isdigit() else None,
                            "severity": one(f"sev_{i}"),
-                           "body": one(f"body_{i}").strip()})
+                           "body": body})
         # Learnings: capture what was dropped/edited/kept before posting — the same signal the
         # dashboard used to discard. Sorted like review_body so form index i lines up. Done
         # even when nothing is chosen (dropping every finding is the strongest signal), and

@@ -82,9 +82,12 @@ CONTRACT="Do NOT print a table and do NOT post anything to GitHub. Write your fi
 ./review.json as a single JSON object: {\"event\":\"COMMENT\", \"summary\":\"…\", \"explainer\":
 \"what this PR does\", \"analysis\":\"what you checked and what you dropped\", \"comments\":[{
 \"path\":\"file\", \"line\":123, \"severity\":\"blocker|should-fix|nit|question\", \"body\":
-\"markdown comment\", \"reply_to\":null}]}. A human reads summary/explainer/analysis in a
-dashboard, then selects, edits and posts individual comments — write that prose for a person and
-keep findings few and high-confidence.${LEARN}"
+\"markdown comment\", \"reply_to\":null, \"suggestion\":null}]}. When a finding has a concrete,
+correct fix that replaces the SINGLE line you set in \"line\", put the exact replacement line
+(matching its indentation) in \"suggestion\" — the reviewer can post it as a one-click GitHub
+suggestion. Only when confident and single-line; otherwise leave \"suggestion\" null. A human
+reads summary/explainer/analysis in a dashboard, then selects, edits and posts individual
+comments — write that prose for a person and keep findings few and high-confidence.${LEARN}"
 
 if [ -n "$ACTOR" ] && [ -f "$USER_SKILL" ]; then
   echo "$ACTOR" > "$DIR/skill"
