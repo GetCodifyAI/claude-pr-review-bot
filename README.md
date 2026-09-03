@@ -17,10 +17,20 @@ all — it only produces a JSON file the dashboard renders.
   posting/approval is per person.
 - **Learnings loop** — when you drop a finding as noise or reword one, Robin remembers and
   feeds it into the next review of the repo, so it stops repeating what you reject.
+- **Review effort per PR** — pick **Quick / Standard / Deep** when you start a review (or take
+  the level auto-suggested from the diff size). Deep searches the whole repo for impact and
+  costs more of your weekly usage; Quick is a fast diff-only pass. You choose per PR.
+- **Editable team-default skill** — the shared review skill lives on the **Skills** page and is
+  editable in the browser. Anyone without their own skill uses it.
+- **Quick-add a rule** — type a preference in plain words ("don't ask for a Jira link in code
+  comments") and Robin tidies it into the skill's *Team rules* section — no editing the whole
+  file.
 - **Bring your own review skill** — paste your `pr-review` skill in Integrations; Robin runs
   its logic and appends its own output contract so any skill works. A **Skills** page scores
   each skill by how often its findings are kept vs dropped — the signal for improving the
   shared default.
+- **Domain-risk context** — a review flags when the PR touches pricing, catalog or DP/integration
+  paths, so the reviewer looks harder there. Context only — it never routes or auto-posts.
 - **GitHub suggestion blocks** — findings can carry a one-click-apply code fix for the author.
 - **Re-review on push** — flags a review as stale when the author pushes new commits.
 - **Per-user Claude account** — connect your own Claude account so reviews you start bill to

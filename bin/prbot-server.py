@@ -476,27 +476,127 @@ def review_env(login):
 # the dashboard needs). No skill => the global default on the box. run-review picks the file by
 # PRBOT_ACTOR and records the skill id next to the review so learnings can score it.
 SKILLS_DIR = ROOT / "skills"
+GLOBAL_SKILL_PATH = SKILLS_DIR / "_global.md"   # the editable team default (maintained here)
+
+
+def skill_path(login):
+    """The file backing a skill target: a login for a personal skill, "global" for the team
+    default. Personal skills are `<login>.md`; the team default is `_global.md`."""
+    return GLOBAL_SKILL_PATH if login == "global" else SKILLS_DIR / f"{login}.md"
 
 
 def user_skill_path(login):
-    return SKILLS_DIR / f"{login}.md"
+    return skill_path(login)
 
 
-def user_skill(login):
-    p = user_skill_path(login)
+def read_skill(login):
+    p = skill_path(login)
     try:
         return p.read_text() if p.exists() else ""
     except OSError:
         return ""
 
 
-def save_user_skill(login, text):
+def user_skill(login):
+    return read_skill(login)
+
+
+def save_skill(login, text):
     SKILLS_DIR.mkdir(parents=True, exist_ok=True)
-    p = user_skill_path(login)
+    p = skill_path(login)
     if text.strip():
         p.write_text(text)
+    elif login != "global":
+        p.unlink(missing_ok=True)          # empty personal skill => fall back to the team default
     else:
-        p.unlink(missing_ok=True)          # empty => reset to the global skill
+        p.unlink(missing_ok=True)          # empty team default => fall back to the installed skill
+
+
+def save_user_skill(login, text):
+    save_skill(login, text)
+
+
+# Quick-add house rules: a reviewer types a plain-English preference ("don't ask for a Jira link
+# in code comments") and it's tidied into a bullet under a managed "## Team rules" section, kept
+# last in the doc so appends are trivial. Robin reads the whole skill, so the rule just applies.
+RULES_MARKER = "## Team rules"
+RULES_INTRO = ("Rules added from the dashboard — apply these on every review "
+               "(they override the general guidance above when they conflict):")
+
+
+def tidy_rule(rule):
+    r = re.sub(r"\s+", " ", (rule or "").strip())
+    if not r:
+        return ""
+    r = r[0].upper() + r[1:]
+    if r[-1] not in ".!?":
+        r += "."
+    return r
+
+
+def add_skill_rule(text, rule):
+    """Append one tidied rule to a skill's managed Team-rules section (created if absent)."""
+    r = tidy_rule(rule)
+    if not r:
+        return text
+    bullet = f"- {r}"
+    if RULES_MARKER in text:
+        return text.rstrip() + f"\n{bullet}\n"      # the section is kept last, so append at end
+    base = text.rstrip()
+    head = (base + "\n\n") if base else ""
+    return f"{head}{RULES_MARKER}\n\n{RULES_INTRO}\n\n{bullet}\n"
+
+
+# --- review effort ---------------------------------------------------------------------------
+# How deep a review goes. The dashboard auto-sizes from the diff and lets the reviewer override;
+# run-review.sh maps the key to a timeout + a depth instruction. Order is low → high.
+EFFORT = {
+    "quick":    ("Quick",    "diff only · ~10 min", "fast pass over just the changed lines"),
+    "standard": ("Standard", "changed files · ~25 min", "the changed files and their context"),
+    "deep":     ("Deep",     "whole-repo trace · ~40 min",
+                 "traces impact across the repo — best for risky or large PRs"),
+}
+EFFORT_ORDER = ["quick", "standard", "deep"]
+
+
+def autosize_effort(meta):
+    """Suggest an effort level from PR size (files + lines changed)."""
+    files = meta.get("changedFiles") or 0
+    lines = (meta.get("additions") or 0) + (meta.get("deletions") or 0)
+    if files <= 3 and lines <= 40:
+        return "quick"
+    if files > 15 or lines > 500:
+        return "deep"
+    return "standard"
+
+
+def review_effort(pr):
+    """The effort a review actually ran at, or "" if unknown/never run."""
+    try:
+        v = (STATE / str(pr) / "effort").read_text().strip()
+        return v if v in EFFORT else ""
+    except OSError:
+        return ""
+
+
+def review_risk(pr):
+    """Domain-risk flags recorded by run-review.sh (pricing / catalog / dp), as a list."""
+    try:
+        return [f for f in (STATE / str(pr) / "risk").read_text().split() if f in RISK_INFO]
+    except OSError:
+        return []
+
+
+RISK_INFO = {
+    "pricing": ("💲", "Touches pricing-related paths",
+                "double-check any price, cost, discount, rebate, margin or fee math, and "
+                "consider looping in the pricing owner."),
+    "catalog": ("📦", "Touches catalog / product paths",
+                "verify catalog and search behavior — product models, ElasticSearch indexing, "
+                "category assignment."),
+    "dp": ("🔌", "Touches DP / integration paths",
+           "check per-DP and per-vendor branching, sync libraries and cutoff/order logic."),
+}
 
 
 def verify_pat(pat):
@@ -896,7 +996,26 @@ align-items:flex-start;border:1px solid;position:relative;overflow:hidden}
 .banner.ok::before{background:var(--ok)}
 .banner.err{background:var(--errbg);border-color:var(--errln);color:#ffa0b2}
 .banner.err::before{background:var(--err)}
+.banner.info{background:rgba(91,124,250,.10);border-color:rgba(91,124,250,.32);color:#bcd0ff}
+.banner.info::before{background:#5b7cfa}
 .banner b{color:#fff}
+/* review effort picker */
+.effort{margin-top:4px}
+.effort-lbl{font-size:.82rem;color:var(--dim);margin-bottom:8px}
+.effrow{display:flex;gap:9px;flex-wrap:wrap}
+.btn.eff{flex:1 1 150px;flex-direction:column;align-items:flex-start;gap:2px;padding:10px 13px;
+height:auto;text-align:left}
+.effname{font-weight:650;font-size:.9rem}
+.effsub{font-size:.72rem;opacity:.8;font-weight:400}
+.btn.eff.soft .effsub{color:var(--dim)}
+.rerun{white-space:nowrap}.rerun a{color:var(--dim)}.rerun a:hover{color:var(--fg)}
+.effbadge{font-size:.68rem;font-weight:700;letter-spacing:.03em;text-transform:uppercase;
+padding:3px 9px;border-radius:999px;background:rgba(91,124,250,.16);color:#bcd0ff;
+border:1px solid rgba(91,124,250,.3)}
+/* quick-add rule */
+.rulebox{margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
+.rule-lbl{font-size:.82rem;font-weight:650;color:var(--fg);margin-bottom:8px}
+.rulerow{display:flex;gap:9px;align-items:stretch}.rulerow .in{flex:1;min-width:0}
 .chips{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0 0}
 /* tabs */
 .tabs{display:flex;gap:2px;flex-wrap:wrap;margin:22px 0 0;border-bottom:1px solid var(--line)}
@@ -1547,7 +1666,8 @@ class Handler(BaseHTTPRequestHandler):
             # Slack cards carry a "review" token; the dashboard's Re-run button mints one too.
             if err := verify("review", pr, exp, sig):
                 return self.deny(err)
-            return self.start_review(pr, user, force=True)
+            return self.start_review(pr, user, force=True,
+                                     effort=(q.get("effort") or [""])[0])
         return self.reply(404, shell("Not found", "<h1>Not found.</h1>"))
 
     # -- POST --------------------------------------------------------------------------------
@@ -1565,7 +1685,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.do_settings(user, form)
         if route in ("/claude/start", "/claude/code", "/claude/cancel", "/claude/disconnect"):
             return self.do_claude_connect(user, route.rsplit("/", 1)[1], form)
-        if route in ("/skill/save", "/skill/reset"):
+        if route in ("/skill/save", "/skill/reset", "/skill/rule"):
             return self.do_skill(user, route.rsplit("/", 1)[1], form)
         pr, exp, sig = one("pr"), one("exp"), one("sig")
         if not pr.isdigit():
@@ -1940,71 +2060,122 @@ class Handler(BaseHTTPRequestHandler):
         one = lambda k: (form.get(k) or [""])[0]  # noqa: E731
         if err := verify("settings", user, one("exp"), one("sig")):
             return self.deny(err)
-        back = lambda b="": self.settings_page(user, b)  # noqa: E731
+        # Which skill this edits: the team default (shared) or the user's own.
+        target = "global" if one("target") == "global" else user
+        who = ("the team default skill" if target == "global" else "your skill")
+        # Return to the page the form came from.
+        back = ((lambda b="": self.skills_page(user, b)) if one("from") == "skills"
+                else (lambda b="": self.settings_page(user, b)))
+        ok = lambda m: back(f"<div class='banner ok'><span>✓</span><div>{m}</div></div>")  # noqa
+
+        if step == "rule":
+            rule = one("rule")
+            if not rule.strip():
+                return back("<div class='banner err'><span>🚫</span><div>Type a rule to add."
+                            "</div></div>")
+            new_text = add_skill_rule(read_skill(target), rule)
+            if len(new_text) > 40000:
+                return back("<div class='banner err'><span>🚫</span><div>That skill is already "
+                            "very large (>40k chars). Trim it before adding more.</div></div>")
+            save_skill(target, new_text)
+            print(f"skill rule added to {target}: {tidy_rule(rule)!r}", flush=True)
+            return ok(f"Added to {who} — Robin will apply it on every review: "
+                      f"<b>{html.escape(tidy_rule(rule))}</b>")
+
         if step == "reset":
-            save_user_skill(user, "")
-            return back("<div class='banner ok'><span>✓</span><div>Reset to the global review "
-                        "skill.</div></div>")
+            save_skill(target, "")
+            return ok("Reset " + ("the team default to the installed skill."
+                                  if target == "global" else "to the team default skill."))
         text = one("skill")
         if not text.strip():
-            save_user_skill(user, "")
-            return back("<div class='banner ok'><span>✓</span><div>Cleared — using the global "
-                        "review skill.</div></div>")
+            save_skill(target, "")
+            return ok("Cleared — " + ("using the installed default skill."
+                                      if target == "global" else "using the team default."))
         if len(text) > 40000:
             return back("<div class='banner err'><span>🚫</span><div>That skill is very large "
                         "(>40k chars). Trim it and try again.</div></div>")
-        save_user_skill(user, text)
-        print(f"skill saved: {user} ({len(text)} chars)", flush=True)
-        return back("<div class='banner ok'><span>✓</span><div>Saved — reviews you start now use "
-                    "your skill (with Robin's output format appended).</div></div>")
+        save_skill(target, text)
+        print(f"skill saved: {target} ({len(text)} chars)", flush=True)
+        return ok(f"Saved {who} — reviews now use it (with Robin's output format appended).")
 
-    def skill_control(self, user, exp, sig):
-        """The paste/save/reset control for a user's review skill, shown on both Integrations
-        and the Skills page. Includes the one-liner to copy a local skill onto the clipboard."""
-        my_skill = user_skill(user)
+    def skill_control(self, user, exp, sig, target=None, frm=""):
+        """Paste/save/reset + quick-add-rule for one skill. `target` is the skill key: the user's
+        login for a personal skill, or "global" for the editable team default. Shown on
+        Integrations (personal only) and the Skills page (both)."""
+        key = target or user
+        is_global = (key == "global")
+        cur = read_skill(key)
+        tval = "global" if is_global else "me"
         hidden = (f"<input type=hidden name=exp value='{exp}'>"
-                  f"<input type=hidden name=sig value='{sig}'>")
-        return (
-            "<div class=hint>Load your local skill onto the clipboard, then paste it here:<br>"
+                  f"<input type=hidden name=sig value='{sig}'>"
+                  f"<input type=hidden name=target value='{tval}'>"
+                  + (f"<input type=hidden name=from value='{html.escape(frm)}'>" if frm else ""))
+        rid = f"skillreset_{'g' if is_global else 'u'}"
+        ph = ("Paste the team's pr-review SKILL.md — or leave blank to use the installed default."
+              if is_global else
+              "Paste your pr-review SKILL.md here — or leave blank for the team default.")
+        foot = ("Everyone who hasn't set their own skill uses this. Robin always appends its "
+                "output format." if is_global else
+                "Your skill's <em>logic</em> runs; Robin always appends its output format, so any "
+                "review skill works. Reviews others start are unaffected.")
+        reset_label = "Reset to installed default" if is_global else "Reset to team default"
+        save_form = (
+            "<div class=hint>Load a local skill onto the clipboard, then paste it here:<br>"
             "<code>cat ~/.claude/skills/pr-review/SKILL.md | pbcopy</code> (macOS) · "
             "<code>… | xclip -selection clipboard</code> or <code>… | wl-copy</code> (Linux)."
             "</div>"
             "<form method=post action='/prbot/skill/save'>"
             "<textarea class=in name=skill spellcheck=false style='min-height:130px;"
-            "font-size:12.5px;margin-top:8px' placeholder='Paste your pr-review SKILL.md here — "
-            f"or leave blank for the global default.'>{html.escape(my_skill)}</textarea>"
-            "<div class=hint>Your skill's <em>logic</em> runs; Robin always appends its own "
-            "output format, so any review skill works. Reviews others start are unaffected.</div>"
-            + hidden
+            f"font-size:12.5px;margin-top:8px' placeholder='{ph}'>{html.escape(cur)}</textarea>"
+            f"<div class=hint>{foot}</div>" + hidden
             + "<div class=inrow style='margin-top:10px'>"
               "<button class='btn primary' type=submit data-busy='Saving…'>Save skill</button>"
-            + ("<button class='btn soft' type=submit form=skillreset>Reset to global</button>"
-               if my_skill else "") + "</div></form>"
-            + (f"<form id=skillreset method=post action='/prbot/skill/reset'>{hidden}</form>"
-               if my_skill else ""))
+            + (f"<button class='btn soft' type=submit form={rid}>{reset_label}</button>"
+               if cur else "") + "</div></form>"
+            + (f"<form id={rid} method=post action='/prbot/skill/reset'>{hidden}</form>"
+               if cur else ""))
+        # Quick-add: a plain-English rule Robin tidies into the skill's "Team rules" section.
+        rule_form = (
+            "<div class=rulebox><div class=rule-lbl>Quick-add a rule</div>"
+            "<form method=post action='/prbot/skill/rule' class=rulerow>"
+            "<input class=in name=rule autocomplete=off placeholder='e.g. Don’t ask for a Jira "
+            "ticket link in code comments'>" + hidden
+            + "<button class='btn soft' type=submit data-busy='Adding…'>Add rule</button>"
+              "</form><div class=hint>Type a preference in plain words — Robin tidies it into "
+              "the skill so you don't have to edit the whole file.</div></div>")
+        return save_form + rule_form
 
-    def skills_page(self, user):
+    def skills_page(self, user, banner=""):
         exp, sig = mint("settings", user, ACTION_TTL)
         my_skill = user_skill(user)
+        has_global = bool(read_skill("global"))
+        team_card = (
+            "<div class=card style='margin-bottom:6px'>"
+            "<h4 style='margin-top:0'>Team default skill "
+            + ("<span class=tag-on style='margin-left:6px'>Edited</span>" if has_global
+               else "<span class=tag-off style='margin-left:6px'>Installed default</span>")
+            + "</h4><p class='muted sm' style='margin-top:0'>The shared skill everyone falls "
+            "back to. Editing this changes reviews for everyone without their own skill.</p>"
+            + self.skill_control(user, exp, sig, target="global", frm="skills") + "</div>")
         skill_card = (
             "<div class=card style='margin-bottom:6px'>"
             "<h4 style='margin-top:0'>Your review skill "
             + ("<span class=tag-on style='margin-left:6px'>Custom</span>" if my_skill
-               else "<span class=tag-off style='margin-left:6px'>Global default</span>")
-            + "</h4>" + self.skill_control(user, exp, sig) + "</div>")
+               else "<span class=tag-off style='margin-left:6px'>Team default</span>")
+            + "</h4>" + self.skill_control(user, exp, sig, frm="skills") + "</div>")
         stats = prbot_learn.skill_stats()
-        mine = bool(user_skill(user))
         head = (f"<h1>Review skills</h1>"
-                "<p class=lead>Bring your own reviewing approach, and see how each person's "
-                "skill scores by how often its findings are kept vs dropped as noise.</p>"
-                + skill_card + "<h2>How each skill scores</h2>")
+                "<p class=lead>The skill is the reviewing approach Robin follows. Edit the shared "
+                "team default or bring your own, and see how each scores by how often its findings "
+                "are kept vs dropped as noise.</p>"
+                + banner + team_card + skill_card + "<h2>How each skill scores</h2>")
         if not stats:
             body = head + ("<div class=empty><span class=ic>🧭</span><b>No scores yet</b>Post a "
                            "few reviews and each skill's kept-rate will show up here.</div>")
             return self.reply(200, shell("Skills", body, user=user, active="skills"))
         rows = []
         for d in stats:
-            label = ("Global default" if d["skill"] == "global"
+            label = ("Team default" if d["skill"] == "global"
                      else f"{html.escape(d['skill'])}'s skill")
             you = " <span class=tag-on style='margin-left:6px'>you</span>" if d["skill"] == user else ""
             rate = d["rate"]
@@ -2214,6 +2385,15 @@ class Handler(BaseHTTPRequestHandler):
                        + (f"<code>{html.escape(who)}</code>'s Claude account"
                           if who and who != "shared" else "the shared team runner")
                        + ".</p>")
+        # Domain-risk context — money / catalog / DP paths. Context for the human, never a gate.
+        for f in review_risk(pr):
+            ic, rttl, note = RISK_INFO[f]
+            banner += (f"<div class='banner info'><span>{ic}</span><div><b>{rttl}.</b> {note}"
+                       "</div></div>")
+        eff = review_effort(pr)
+        eff_badge = (f"<span class=effbadge title='Reviewed at {EFFORT[eff][0]} effort — "
+                     f"{EFFORT[eff][2]}'>{EFFORT[eff][0]} review</span>"
+                     if eff and st not in ("reviewing", "queued") else "")
         # Stale check: the author pushed new commits since this review ran. Flag it (don't
         # auto-re-run — that would spend tokens without a click).
         head_f = STATE / pr / "head"
@@ -2228,7 +2408,7 @@ class Handler(BaseHTTPRequestHandler):
                 f"<span class=cur>#{pr}</span></nav>"
                 f"<h1 class=prtitle>#{pr} — {html.escape(title)}</h1>"
                 f"<div class=meta>{pill(st)}"
-                + (pill("dry", "dry run") if DRY_RUN else "")
+                + (pill("dry", "dry run") if DRY_RUN else "") + eff_badge
                 + f"<span>{html.escape(meta.get('author', ''))}{size}</span>"
                   f"<span>·</span><a href='{ghurl}'>open on GitHub</a>"
                 + ("" if active and user in requested_of(meta)
@@ -2245,9 +2425,9 @@ class Handler(BaseHTTPRequestHandler):
                 "running now. Re-run it below."
                 + (f"<br>Agent output: <code>{html.escape(tail)}</code>" if tail else "")
                 + "</div></div>"
-                f"<div class=card><p><a class='btn primary' href='{link('review', pr)}'>"
-                f"Re-run review</a> <a class=btn href='{link('archive', pr)}'>Archive</a></p>"
-                f"</div>"), user=user, active="queue"))
+                f"<div class=card>{self.effort_picker(pr, meta, label='Re-run review')}"
+                f"<p style='margin-top:10px'><a class=btn href='{link('archive', pr)}'>Archive"
+                f"</a></p></div>"), user=user, active="queue"))
 
         if st == "reviewing":
             s = (STATE / pr / "status").read_text().strip().lower()
@@ -2265,13 +2445,14 @@ class Handler(BaseHTTPRequestHandler):
                     steps.append(f"<li><span class=pm>○</span>{ph}</li>")
             queued = ("<div class=hint>Waiting for another review to finish first — one runs at "
                       "a time on this box.</div>" if "queued" in s else "")
+            reff = review_effort(pr) or "standard"
             panel = (
                 "<div class=card><div class=prog-hd>Drafting review for "
-                f"<b>#{pr}</b> · <span class='muted sm'>pr-review</span></div>"
+                f"<b>#{pr}</b> · <span class='muted sm'>{EFFORT[reff][0]} effort</span></div>"
                 f"<ul class=prog>{''.join(steps)}</ul>"
                 "<div class=progbar><div class=progfill></div></div>"
                 f"{queued}<div class='hint' style='margin-top:10px'>This page refreshes itself; "
-                "a 25-file PR takes about 10–15 minutes.</div></div>")
+                f"{EFFORT[reff][2]}.</div></div>")
             return self.reply(200, shell(f"#{pr}", head + panel, refresh=link("pr", pr),
                                          user=user, active="queue"))
 
@@ -2286,8 +2467,7 @@ class Handler(BaseHTTPRequestHandler):
                         if marker(pr, "approved", user).get("at") else "")
             body = (f"<div class=card><h4>Not reviewed here</h4>"
                     f"<p class='muted sm'>No review has been run for this PR on this box.</p>"
-                    f"<p><a class='btn primary' href='{link('review', pr)}'>Run review</a></p>"
-                    f"</div>") if not approved else approved
+                    f"{self.effort_picker(pr, meta)}</div>") if not approved else approved
             return self.reply(200, shell(f"#{pr}",
                                          head + note + body + self.footer_actions(pr, user),
                                          user=user, active="queue"))
@@ -2387,7 +2567,7 @@ class Handler(BaseHTTPRequestHandler):
               f"<span class='muted sm'><b id=cnt>0</b> selected · posts as plain comments, "
               f"does not request changes</span>"
               f"<span class=spacer></span>"
-              f"<a class='btn ghost' href='{link('review', pr)}'>Re-run</a>"
+              f"{self.effort_rerun(pr)}"
               f"<button class='btn primary' id=submit type=submit>{label}</button>"
               f"</div></div></form>")
 
@@ -2463,7 +2643,33 @@ class Handler(BaseHTTPRequestHandler):
                 f"<a class=btn href='{link('archive', pr)}'>Archive</a></p></div>")
 
     # -- actions -----------------------------------------------------------------------------
-    def start_review(self, pr, user, force=False):
+    def effort_picker(self, pr, meta, label="Run review"):
+        """Three effort buttons; the size-suggested one highlighted. This is where a reviewer
+        says 'review this shallow / deep' per PR."""
+        suggested = autosize_effort(meta)
+        base = link("review", pr)
+        btns = []
+        for k in EFFORT_ORDER:
+            name, sub, _ = EFFORT[k]
+            hot = (k == suggested)
+            cls = "btn primary" if hot else "btn soft"
+            btns.append(
+                f"<a class='{cls} eff' href='{base}&effort={k}'>"
+                f"<span class=effname>{name}{' · suggested' if hot else ''}</span>"
+                f"<span class=effsub>{sub}</span></a>")
+        return (f"<div class=effort><div class=effort-lbl>{label} at</div>"
+                f"<div class=effrow>{''.join(btns)}</div>"
+                "<div class=hint>Suggested from the PR size — you choose. Deeper reviews cost "
+                "more of your weekly Claude usage.</div></div>")
+
+    def effort_rerun(self, pr):
+        """Compact 'Re-run: Quick · Standard · Deep' for the sticky bar on a finished review."""
+        base = link("review", pr)
+        links = " · ".join(f"<a href='{base}&effort={k}'>{EFFORT[k][0]}</a>"
+                           for k in EFFORT_ORDER)
+        return f"<span class='muted sm rerun'>Re-run: {links}</span>"
+
+    def start_review(self, pr, user, force=False, effort=""):
         d = STATE / pr
         d.mkdir(parents=True, exist_ok=True)
         touch_user(pr, user)
@@ -2472,11 +2678,15 @@ class Handler(BaseHTTPRequestHandler):
         # a stalled one (status stuck at "reviewing" but the process is gone) be recovered; the
         # old "idle" guard read the stale status and refused, so Re-run appeared to do nothing.
         if not is_running(pr):
+            meta, _ = pr_meta(pr)
+            eff = effort if effort in EFFORT else autosize_effort(meta)
+            (d / "effort").write_text(eff)
             (d / "status").write_text("queued")
+            env = review_env(user)
+            env["PRBOT_EFFORT"] = eff
             with open(d / "run.log", "ab") as log:
                 subprocess.Popen([str(BIN / "run-review.sh"), pr], stdout=log,
-                                 stderr=subprocess.STDOUT, start_new_session=True,
-                                 env=review_env(user))
+                                 stderr=subprocess.STDOUT, start_new_session=True, env=env)
         return self.redirect(link("pr", pr))
 
     def do_post_comments(self, pr, user, form):

@@ -129,12 +129,25 @@ The worktree is removed as soon as `review.json` is copied out.
   dropped/edited rows into the next review prompt so the agent stops re-raising rejected noise;
   the `/learnings` page shows it. Shared per repo, attributed per user. Not ML — in-context
   steering with your own recent decisions.
-- **Skills**: a user can bring their own review skill (`~/.claude-pr-bot/skills/<login>.md`).
-  `run-review.sh` picks the clicker's skill (`PRBOT_ACTOR`) or the global default, runs its
-  logic, and **always appends an explicit `review.json` output contract**, so any skill yields
-  the shape the dashboard needs. Each review records the skill id (`state/<pr>/skill`); learnings
-  rows carry it; the `/skills` page scores each skill by kept-rate. The flywheel: usage →
-  accept/reject signal → which skills work → a better global skill (human-approved).
+- **Review effort** (`state/<pr>/effort`): the dashboard auto-sizes an effort level from the diff
+  (`quick`/`standard`/`deep`) and lets the reviewer override it per PR. `start_review` writes the
+  file and passes `PRBOT_EFFORT`; `run-review.sh` maps it to a timeout (12/25/40 min) and a depth
+  instruction appended to the prompt — `deep` tells the agent to search the whole repo for impact
+  before judging. Nothing else about the run changes. Shown on the review, and as the phase panel's
+  subtitle while running.
+- **Skills**: a user can bring their own review skill (`~/.claude-pr-bot/skills/<login>.md`), and
+  the **team default** is an editable file (`skills/_global.md`, seeded by bootstrap) maintained
+  from the `/skills` page. `run-review.sh` picks the clicker's skill (`PRBOT_ACTOR`), else the
+  editable team default, else the installed `pr-review` skill; it runs the skill's logic and
+  **always appends an explicit `review.json` output contract**, so any skill yields the shape the
+  dashboard needs. **Quick-add rule**: `add_skill_rule` tidies a plain-English preference into a
+  managed `## Team rules` section of the target skill (kept last so appends are trivial). Each
+  review records the skill id (`state/<pr>/skill`); learnings rows carry it; the `/skills` page
+  scores each skill by kept-rate. The flywheel: usage → accept/reject signal → which skills work →
+  a better team default (human-approved).
+- **Domain-risk flags** (`state/<pr>/risk`): `run-review.sh` records a path-based heuristic
+  (pricing / catalog / dp) from the PR's file list; the detail page shows a context banner. It is
+  informational — never a gate, never routing or auto-@ (unlike the Devin analysis bot's gates).
 - **Suggestion blocks**: a finding may carry a `suggestion` (single-line replacement); on post
   it's appended to the comment body as a GitHub ```` ```suggestion ```` block (one-click apply).
 - **Staleness**: `run-review.sh` records the reviewed head SHA (`state/<pr>/head`); the detail

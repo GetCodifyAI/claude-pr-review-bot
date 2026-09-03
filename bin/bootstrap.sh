@@ -128,6 +128,14 @@ mkdir -p "$HOME/.claude/skills"
 cp -r "$SRC/../skills/pr-review" "$HOME/.claude/skills/" 2>/dev/null \
   || echo "   !! skills/pr-review not found next to $SRC — reviews will run without it"
 
+# Editable team-default review skill. Seed $ROOT/skills/_global.md on first install so it shows
+# real content and is editable from the dashboard; never overwrite once it exists (it's edited live).
+mkdir -p "$ROOT/skills"
+if [ ! -f "$ROOT/skills/_global.md" ] && [ -f "$SRC/../skills/global-review.md" ]; then
+  install -m 0644 "$SRC/../skills/global-review.md" "$ROOT/skills/_global.md"
+  echo "   seeded team-default skill (_global.md)"
+fi
+
 echo "==> systemd unit"
 sudo tee /etc/systemd/system/prbot.service >/dev/null <<EOF
 [Unit]

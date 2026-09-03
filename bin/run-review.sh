@@ -27,9 +27,41 @@ notify_fail() {
 
 have_free_mem || fail "not enough free memory to start a review"
 
+# Review effort — how deep the agent goes. The dashboard sets PRBOT_EFFORT (auto-sized from the
+# diff, human-overridable). It changes only two things: the timeout, and a depth instruction
+# appended to the prompt. Everything else about the run is identical.
+EFFORT="${PRBOT_EFFORT:-standard}"
+case "$EFFORT" in
+  quick)
+    TIMEOUT=12m
+    DEPTH="
+Effort level: QUICK. Look only at the diff and the files it directly changes. Report only clear
+correctness bugs, broken logic and obvious runtime failures. Skip style, speculative concerns and
+minor edge cases. Keep findings very few — this is a fast pass."
+    ;;
+  deep)
+    TIMEOUT=40m
+    DEPTH="
+Effort level: DEEP. Before judging, search the whole repository for everything this change affects
+— callers, dependents, shared models, GraphQL queries/mutations/fragments, and any per-DP or
+per-vendor branching — and trace the data flow end to end. Cover correctness, error handling, race
+conditions, edge cases, migration/back-compat, and performance and security implications. Use the
+time the budget allows, but still report only genuine, high-signal findings."
+    ;;
+  *)
+    EFFORT=standard
+    TIMEOUT=25m
+    DEPTH="
+Effort level: STANDARD. Review the changed files and their immediate callers and context. Cover
+correctness, error handling, obvious edge cases and clear risks. Keep findings focused and
+high-confidence."
+    ;;
+esac
+echo "$EFFORT" > "$DIR/effort"
+
 status "fetching"
 meta=$(gh pr view "$PR" --repo "$REPO" \
-        --json headRefName,headRefOid,title,url,author,createdAt,updatedAt,additions,deletions,changedFiles \
+        --json headRefName,headRefOid,title,url,author,createdAt,updatedAt,additions,deletions,changedFiles,files \
         2>/dev/null) || fail "PR not found"
 branch=$(echo "$meta" | jq -r .headRefName)
 title=$(echo "$meta"  | jq -r .title)
@@ -43,6 +75,14 @@ echo "$meta" | jq --arg n "$PR" '{number:($n|tonumber), title, url,
 # Record the head SHA this review ran against, so the dashboard can flag the review as stale
 # once the author pushes new commits (a new head SHA) — without auto-spending tokens to re-run.
 echo "$meta" | jq -r .headRefOid > "$DIR/head"
+# Domain-risk flags for a context banner in the dashboard — a path-based heuristic that says
+# "this touches money / catalog / DP-integration code, look harder". Never a gate, never routing.
+paths=$(echo "$meta" | jq -r '.files[]?.path // empty' 2>/dev/null)
+risk=""
+printf '%s\n' "$paths" | grep -qiE 'pric|/cost|discount|promo|rebate|margin|/fees?/|Fee' && risk+="pricing "
+printf '%s\n' "$paths" | grep -qiE 'catalog|[Pp]roduct|elasticsearch|ProductSearch' && risk+="catalog "
+printf '%s\n' "$paths" | grep -qiE 'integrators/|SyncLibs|dpCode|vendorId' && risk+="dp "
+echo "$risk" | xargs > "$DIR/risk" 2>/dev/null || true
 
 # Base clone lives under $ROOT, deliberately NOT the rsync target
 # (/var/local/cut-dry/current/) — `staging:dev`'s --delete would otherwise wipe a
@@ -73,10 +113,12 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 LEARN=$(PYTHONPATH="$HERE" ROOT="$ROOT" python3 -c \
   'import prbot_learn,sys;sys.stdout.write(prbot_learn.render())' 2>/dev/null)
 
-# Which review skill: the clicker's own if they brought one, else the global default. Record the
-# id next to the review so learnings can score each skill by how many of its findings get kept.
+# Which review skill: the clicker's own if they brought one, else the editable team default
+# ($ROOT/skills/_global.md, maintained from the dashboard), else the installed pr-review skill.
+# Record the id next to the review so learnings can score each skill by how many findings get kept.
 ACTOR="${PRBOT_ACTOR:-}"
 USER_SKILL="$ROOT/skills/$ACTOR.md"
+GLOBAL_SKILL="$ROOT/skills/_global.md"
 # The output contract — spelled out here so ANY skill (custom or global) yields the exact
 # review.json the dashboard needs, independent of whether the skill itself defines the format.
 CONTRACT="Do NOT print a table and do NOT post anything to GitHub. Write your findings to
@@ -94,18 +136,27 @@ reads summary/explainer/analysis in a dashboard, then selects, edits and posts i
 comments — write that prose for a person and keep findings few and high-confidence.${LEARN}"
 
 if [ -n "$ACTOR" ] && [ -f "$USER_SKILL" ]; then
-  echo "$ACTOR" > "$DIR/skill"
+  echo "$ACTOR" > "$DIR/skill"; APPROACH="$(cat "$USER_SKILL")"
+elif [ -f "$GLOBAL_SKILL" ]; then
+  echo "global" > "$DIR/skill"; APPROACH="$(cat "$GLOBAL_SKILL")"
+else
+  echo "global" > "$DIR/skill"; APPROACH=""
+fi
+
+if [ -n "$APPROACH" ]; then
   PROMPT="Review PR #$PR of $REPO. Follow this reviewing approach:
 
-$(cat "$USER_SKILL")
+$APPROACH
+$DEPTH
 
 $CONTRACT"
 else
-  echo "global" > "$DIR/skill"
-  PROMPT="Use the pr-review skill to review PR #$PR of $REPO. Follow its Step 7 automation mode. ${CONTRACT}"
+  PROMPT="Use the pr-review skill to review PR #$PR of $REPO. Follow its Step 7 automation mode.
+$DEPTH
+${CONTRACT}"
 fi
 
-(cd "$wt" && timeout 25m claude -p "$PROMPT" \
+(cd "$wt" && timeout "$TIMEOUT" claude -p "$PROMPT" \
   --allowedTools "Bash Read Glob Grep Write" < /dev/null) >"$DIR/agent.log" 2>&1
 
 [ -s "$wt/review.json" ] || fail "agent produced no review.json (see $DIR/agent.log)"
