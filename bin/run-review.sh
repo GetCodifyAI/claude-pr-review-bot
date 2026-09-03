@@ -40,6 +40,9 @@ url=$(echo "$meta"    | jq -r .url)
 echo "$meta" | jq --arg n "$PR" '{number:($n|tonumber), title, url,
      author:.author.login, createdAt, updatedAt, additions, deletions, changedFiles}' \
   > "$DIR/meta.json"
+# Record the head SHA this review ran against, so the dashboard can flag the review as stale
+# once the author pushes new commits (a new head SHA) — without auto-spending tokens to re-run.
+echo "$meta" | jq -r .headRefOid > "$DIR/head"
 
 # Base clone lives under $ROOT, deliberately NOT the rsync target
 # (/var/local/cut-dry/current/) — `staging:dev`'s --delete would otherwise wipe a

@@ -2165,6 +2165,16 @@ class Handler(BaseHTTPRequestHandler):
                        + (f"<code>{html.escape(who)}</code>'s Claude account"
                           if who and who != "shared" else "the shared team runner")
                        + ".</p>")
+        # Stale check: the author pushed new commits since this review ran. Flag it (don't
+        # auto-re-run — that would spend tokens without a click).
+        head_f = STATE / pr / "head"
+        cur_head = meta.get("head", "")
+        if head_f.exists() and cur_head and head_f.read_text().strip() != cur_head:
+            banner += (
+                "<div class='banner warn'><span>🔄</span><div><b>The author pushed new commits "
+                "since this review.</b> The findings may be out of date — "
+                f"<a href='{link('review', pr)}'>re-run the review</a> to check the latest "
+                "code.</div></div>")
         head = (f"<nav class=bc><a href='{link('', '')}'>Queue</a><span class=sep>/</span>"
                 f"<span class=cur>#{pr}</span></nav>"
                 f"<h1 class=prtitle>#{pr} — {html.escape(title)}</h1>"
