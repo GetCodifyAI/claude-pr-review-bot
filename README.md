@@ -17,11 +17,15 @@ all — it only produces a JSON file the dashboard renders.
   posting/approval is per person.
 - **Learnings loop** — when you drop a finding as noise or reword one, Robin remembers and
   feeds it into the next review of the repo, so it stops repeating what you reject.
-- **Review effort per PR** — pick **Quick / Standard / Deep** when you start a review (or take
-  the level auto-suggested from the diff size). Deep searches the whole repo for impact and
-  costs more of your weekly usage; Quick is a fast diff-only pass. You choose per PR.
-- **Editable team-default skill** — the shared review skill lives on the **Skills** page and is
-  editable in the browser. Anyone without their own skill uses it.
+- **Deliberate run** — starting a review is a small form, not a one-click: choose **Quick /
+  Standard / Deep** effort (auto-suggested from the diff) and optionally add a **focus note**
+  ("pay attention to the order-flow cost calc") that Robin folds in on top of the skill.
+- **Re-run with history** — re-run at a different effort or focus any time; the previous run is
+  kept in **history** and viewable, never overwritten.
+- **Stop** — a running review can be stopped from the progress panel.
+- **Choose which skill runs** — the **Skills** page has one selector: run reviews with the
+  shared **team default** or **your own skill**. The team default is editable in the browser and
+  protected (it can't be blanked, and restoring the built-in takes a typed confirm).
 - **Quick-add a rule** — type a preference in plain words ("don't ask for a Jira link in code
   comments") and Robin tidies it into the skill's *Team rules* section — no editing the whole
   file.

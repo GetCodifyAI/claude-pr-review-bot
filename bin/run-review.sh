@@ -119,6 +119,16 @@ LEARN=$(PYTHONPATH="$HERE" ROOT="$ROOT" python3 -c \
 ACTOR="${PRBOT_ACTOR:-}"
 USER_SKILL="$ROOT/skills/$ACTOR.md"
 GLOBAL_SKILL="$ROOT/skills/_global.md"
+# The dashboard's active-skill choice: "own" uses the clicker's skill if present, "team" forces
+# the shared default even when they have their own on file.
+CHOICE="${PRBOT_SKILL_CHOICE:-own}"
+FOCUS="${PRBOT_FOCUS:-}"
+FOCUSBLOCK=""
+[ -n "$FOCUS" ] && FOCUSBLOCK="
+
+The reviewer specifically asked you to focus on the following — prioritise it alongside the skill,
+and if it turns out not to apply, say so briefly in the analysis:
+$FOCUS"
 # The output contract — spelled out here so ANY skill (custom or global) yields the exact
 # review.json the dashboard needs, independent of whether the skill itself defines the format.
 CONTRACT="Do NOT print a table and do NOT post anything to GitHub. Write your findings to
@@ -135,7 +145,7 @@ suggestion. Only when confident and single-line; otherwise leave \"suggestion\" 
 reads summary/explainer/analysis in a dashboard, then selects, edits and posts individual
 comments — write that prose for a person and keep findings few and high-confidence.${LEARN}"
 
-if [ -n "$ACTOR" ] && [ -f "$USER_SKILL" ]; then
+if [ "$CHOICE" != team ] && [ -n "$ACTOR" ] && [ -f "$USER_SKILL" ]; then
   echo "$ACTOR" > "$DIR/skill"; APPROACH="$(cat "$USER_SKILL")"
 elif [ -f "$GLOBAL_SKILL" ]; then
   echo "global" > "$DIR/skill"; APPROACH="$(cat "$GLOBAL_SKILL")"
@@ -148,11 +158,13 @@ if [ -n "$APPROACH" ]; then
 
 $APPROACH
 $DEPTH
+$FOCUSBLOCK
 
 $CONTRACT"
 else
   PROMPT="Use the pr-review skill to review PR #$PR of $REPO. Follow its Step 7 automation mode.
 $DEPTH
+$FOCUSBLOCK
 ${CONTRACT}"
 fi
 

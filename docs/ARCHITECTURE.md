@@ -129,12 +129,21 @@ The worktree is removed as soon as `review.json` is copied out.
   dropped/edited rows into the next review prompt so the agent stops re-raising rejected noise;
   the `/learnings` page shows it. Shared per repo, attributed per user. Not ML — in-context
   steering with your own recent decisions.
-- **Review effort** (`state/<pr>/effort`): the dashboard auto-sizes an effort level from the diff
-  (`quick`/`standard`/`deep`) and lets the reviewer override it per PR. `start_review` writes the
-  file and passes `PRBOT_EFFORT`; `run-review.sh` maps it to a timeout (12/25/40 min) and a depth
-  instruction appended to the prompt — `deep` tells the agent to search the whole repo for impact
-  before judging. Nothing else about the run changes. Shown on the review, and as the phase panel's
-  subtitle while running.
+- **Review effort + focus** (`state/<pr>/effort`, `state/<pr>/focus`): starting a review is a form
+  (`run_form`), not a link — the reviewer picks an effort level (auto-sized from the diff) and can
+  add a free-text focus note. `start_review` writes both and passes `PRBOT_EFFORT` / `PRBOT_FOCUS`;
+  `run-review.sh` maps effort to a timeout (12/25/40 min) and a depth instruction, and appends the
+  focus to the prompt. `deep` tells the agent to search the whole repo for impact before judging.
+- **Re-run history**: `start_review` calls `archive_review`, which copies the current run's files
+  into `state/<pr>/history/<ts>/` and clears the live `review.json` so the re-run starts clean. The
+  detail page lists earlier runs; `/pr?pr=N&v=<ts>` renders one read-only.
+- **Stop**: `start_review` records the run's pid (`state/<pr>/pid`, a session leader via
+  `start_new_session`); `POST /stop` kills the process group and writes a `stopped` status.
+- **Active skill choice** (`state/skills/<login>.use`): one selector on `/skills` sets whether a
+  user's reviews run with their own skill or the team default. `start_review` passes it as
+  `PRBOT_SKILL_CHOICE`, which `run-review.sh` honors (`team` ignores a personal skill on file). The
+  team default is guarded — `save_skill` refuses to blank it, and `restore_global_skill` (typed
+  confirm) is the only way back to the installed skill.
 - **Skills**: a user can bring their own review skill (`~/.claude-pr-bot/skills/<login>.md`), and
   the **team default** is an editable file (`skills/_global.md`, seeded by bootstrap) maintained
   from the `/skills` page. `run-review.sh` picks the clicker's skill (`PRBOT_ACTOR`), else the
