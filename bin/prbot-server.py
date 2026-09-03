@@ -458,13 +458,44 @@ def store_claude_token(login, data):
 
 
 def review_env(login):
-    """Environment for a review spawned by `login`: their Claude token if connected."""
-    env = {**os.environ, "PRBOT_RUN_AS": "shared"}
+    """Environment for a review spawned by `login`: which account it bills to, and whose review
+    skill it uses. PRBOT_ACTOR is always the clicker (drives skill choice); PRBOT_RUN_AS is the
+    Claude account for display, only their own if they connected one."""
+    env = {**os.environ, "PRBOT_RUN_AS": "shared", "PRBOT_ACTOR": login or ""}
     tok = user_claude_token(login) if login else ""
     if tok:
         env["CLAUDE_CODE_OAUTH_TOKEN"] = tok
         env["PRBOT_RUN_AS"] = login
     return env
+
+
+# --- per-user review skill -------------------------------------------------------------------
+# A user can bring their own pr-review skill; reviews they start use it (its logic runs, but
+# run-review.sh always appends our own output contract, so any skill still yields the review.json
+# the dashboard needs). No skill => the global default on the box. run-review picks the file by
+# PRBOT_ACTOR and records the skill id next to the review so learnings can score it.
+SKILLS_DIR = ROOT / "skills"
+
+
+def user_skill_path(login):
+    return SKILLS_DIR / f"{login}.md"
+
+
+def user_skill(login):
+    p = user_skill_path(login)
+    try:
+        return p.read_text() if p.exists() else ""
+    except OSError:
+        return ""
+
+
+def save_user_skill(login, text):
+    SKILLS_DIR.mkdir(parents=True, exist_ok=True)
+    p = user_skill_path(login)
+    if text.strip():
+        p.write_text(text)
+    else:
+        p.unlink(missing_ok=True)          # empty => reset to the global skill
 
 
 def verify_pat(pat):
@@ -978,6 +1009,8 @@ border-radius:999px;background:var(--okbg);color:#6fe6b2;border:1px solid var(--
 border-radius:999px;background:var(--panel2);color:var(--faint);border:1px solid var(--line)}
 .tag-req{font-size:.68rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:3px 9px;
 border-radius:999px;background:var(--warnbg);color:#f6cd8a;border:1px solid var(--warnln)}
+.ratebar{height:7px;border-radius:999px;background:var(--panel2);overflow:hidden;margin-top:8px}
+.ratefill{height:100%;background:var(--grad);border-radius:999px}
 /* how-it-works */
 .flow{display:flex;flex-direction:column;gap:0;margin:10px 0 8px}
 .fstep{display:flex;gap:16px;padding:0 0 26px}
@@ -1096,12 +1129,16 @@ NAV_ICONS = {
     "learnings": "<svg viewBox='0 0 24 24' fill=none stroke=currentColor stroke-width=1.8 "
                  "stroke-linecap=round stroke-linejoin=round><path d='M12 3l2.1 4.5L19 8.2l-3.5"
                  " 3.3.9 4.9L12 14.1 7.6 16.4l.9-4.9L5 8.2l4.9-.7z'/></svg>",
+    "skills": "<svg viewBox='0 0 24 24' fill=none stroke=currentColor stroke-width=1.8 "
+              "stroke-linecap=round stroke-linejoin=round><path d='M16 18l6-6-6-6M8 6l-6 6 6 6'/>"
+              "</svg>",
 }
 
 
 def sidebar(user, active):
     items = [("queue", "Queue", "/prbot/"),
              ("learnings", "Learnings", "/prbot/learnings"),
+             ("skills", "Skills", "/prbot/skills"),
              ("integrations", "Integrations", "/prbot/integrations"),
              ("how", "How it works", "/prbot/how")]
     nav = "".join(
@@ -1460,6 +1497,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.how_page(user)
         if route == "/learnings":
             return self.learnings_page(user)
+        if route == "/skills":
+            return self.skills_page(user)
         if route == "/":
             tab = (q.get("tab") or ["todo"])[0]
             srt = (q.get("sort") or ["newest"])[0]
@@ -1500,6 +1539,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.do_settings(user, form)
         if route in ("/claude/start", "/claude/code", "/claude/cancel", "/claude/disconnect"):
             return self.do_claude_connect(user, route.rsplit("/", 1)[1], form)
+        if route in ("/skill/save", "/skill/reset"):
+            return self.do_skill(user, route.rsplit("/", 1)[1], form)
         pr, exp, sig = one("pr"), one("exp"), one("sig")
         if not pr.isdigit():
             return self.reply(400, shell("Bad request", "<h1>Missing PR number.</h1>"))
@@ -1662,7 +1703,32 @@ class Handler(BaseHTTPRequestHandler):
                            "Reviews you start run on your own Claude account.",
                            claude_inner, ok=has_claude) + claude_aux
 
-        cards = github_card + slack_card + claude_card
+        my_skill = user_skill(user)
+        skill_svg = ("<svg viewBox='0 0 24 24' width=22 height=22 fill=none stroke=currentColor "
+                     "stroke-width=1.8 stroke-linecap=round stroke-linejoin=round>"
+                     "<path d='M16 18l6-6-6-6M8 6l-6 6 6 6'/></svg>")
+        skill_ctl = (
+            "<form method=post action='/prbot/skill/save'>"
+            "<textarea class=in name=skill spellcheck=false style='min-height:120px;font-size:12.5px'"
+            f" placeholder='Paste your pr-review SKILL.md here — or leave blank for the global "
+            f"default.'>{html.escape(my_skill)}</textarea>"
+            "<div class=hint>Your skill's <em>logic</em> runs; Robin always appends its own "
+            "output format, so any review skill works. Reviews others start are unaffected.</div>"
+            + hidden
+            + "<div class=inrow style='margin-top:10px'>"
+              "<button class='btn primary' type=submit data-busy='Saving…'>Save skill</button>"
+            + ("<button class='btn soft' type=submit form=skillreset>Reset to global</button>"
+               if my_skill else "") + "</div></form>"
+            + (f"<form id=skillreset method=post action='/prbot/skill/reset'>{hidden}</form>"
+               if my_skill else ""))
+        skill_chip = ("<span class=tag-on>Custom</span>" if my_skill
+                      else "<span class=tag-off>Global default</span>")
+        skill_card = card("skill", skill_svg, "Review skill", skill_chip,
+                          "The reviewing approach your reviews use. "
+                          "<a href='/prbot/skills'>See how each skill scores →</a>",
+                          skill_ctl, ok=bool(my_skill))
+
+        cards = github_card + slack_card + claude_card + skill_card
         if welcome:
             ready = has_claude and has_slack
             cta = (f"<a class='btn primary block' href='{html.escape(nxt)}'>Go to your queue →"
@@ -1853,6 +1919,59 @@ class Handler(BaseHTTPRequestHandler):
             return self.redirect(nxt if nxt.startswith("/prbot/") else "/prbot/")
         return back("<div class='banner ok'><span>✓</span><div>Claude connected — reviews you "
                     "start now run on your own account.</div></div>")
+
+    def do_skill(self, user, step, form):
+        one = lambda k: (form.get(k) or [""])[0]  # noqa: E731
+        if err := verify("settings", user, one("exp"), one("sig")):
+            return self.deny(err)
+        back = lambda b="": self.settings_page(user, b)  # noqa: E731
+        if step == "reset":
+            save_user_skill(user, "")
+            return back("<div class='banner ok'><span>✓</span><div>Reset to the global review "
+                        "skill.</div></div>")
+        text = one("skill")
+        if not text.strip():
+            save_user_skill(user, "")
+            return back("<div class='banner ok'><span>✓</span><div>Cleared — using the global "
+                        "review skill.</div></div>")
+        if len(text) > 40000:
+            return back("<div class='banner err'><span>🚫</span><div>That skill is very large "
+                        "(>40k chars). Trim it and try again.</div></div>")
+        save_user_skill(user, text)
+        print(f"skill saved: {user} ({len(text)} chars)", flush=True)
+        return back("<div class='banner ok'><span>✓</span><div>Saved — reviews you start now use "
+                    "your skill (with Robin's output format appended).</div></div>")
+
+    def skills_page(self, user):
+        stats = prbot_learn.skill_stats()
+        mine = bool(user_skill(user))
+        head = (f"<h1>Review skills</h1>"
+                "<p class=lead>Which reviewing approach each person's reviews use, scored by how "
+                "often their findings are kept vs dropped as noise. Bring your own skill in "
+                "<a href='/prbot/integrations'>Integrations</a>.</p>")
+        if not stats:
+            body = head + ("<div class=empty><span class=ic>🧭</span><b>No data yet</b>Post a few "
+                           "reviews and each skill's kept-rate will show up here.</div>")
+            return self.reply(200, shell("Skills", body, user=user, active="skills"))
+        rows = []
+        for d in stats:
+            label = ("Global default" if d["skill"] == "global"
+                     else f"{html.escape(d['skill'])}'s skill")
+            you = " <span class=tag-on style='margin-left:6px'>you</span>" if d["skill"] == user else ""
+            rate = d["rate"]
+            bar = (f"<div class=ratebar><div class=ratefill style='width:{rate}%'></div></div>")
+            rows.append(
+                f"<div class=row><div class=rowlink><div class=rowtop>"
+                f"<span class=ttl>{label}{you}</span>"
+                f"<span class=num style='-webkit-text-fill-color:var(--fg)'>{rate}% kept</span>"
+                f"</div>{bar}<div class='muted sm' style='margin-top:6px'>"
+                f"{d['kept']} kept · {d['edited']} reworded · {d['dropped']} dropped · "
+                f"{d['total']} findings</div></div></div>")
+        body = (head + "<div class=list>" + "".join(rows) + "</div>"
+                "<p class=fine>Kept-rate = findings posted or reworded, over all findings that "
+                "skill produced. Higher means the approach matches what reviewers actually want "
+                "to say. This is the signal for improving the global skill.</p>")
+        return self.reply(200, shell("Skills", body, user=user, active="skills"))
 
     def do_settings(self, user, form):
         one = lambda k: (form.get(k) or [""])[0]  # noqa: E731
@@ -2280,7 +2399,9 @@ class Handler(BaseHTTPRequestHandler):
         # before the dry-run branch so it learns during the pilot too.
         originals = sorted(rev.get("comments", []),
                            key=lambda c: SEV_ORDER.get(c.get("severity"), 9))
-        prbot_learn.record(pr, user, originals, form)
+        skill_f = STATE / pr / "skill"
+        skill = skill_f.read_text().strip() if skill_f.exists() else "global"
+        prbot_learn.record(pr, user, originals, form, skill=skill)
         if not chosen:
             return self.detail_page(pr, user, "<div class='banner warn'><span>⚠️</span><div>"
                                               "Nothing selected — nothing sent.</div></div>")

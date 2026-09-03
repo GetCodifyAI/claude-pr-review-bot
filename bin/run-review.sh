@@ -68,17 +68,34 @@ rm -f "$wt/review.json"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 LEARN=$(PYTHONPATH="$HERE" ROOT="$ROOT" python3 -c \
   'import prbot_learn,sys;sys.stdout.write(prbot_learn.render())' 2>/dev/null)
-(cd "$wt" && timeout 25m claude -p "Use the pr-review skill to review PR #$PR of $REPO.
 
-Follow Step 7 (automation mode): do NOT print the bottom table, do NOT post anything to
-GitHub, and write your findings to ./review.json in exactly the shape Step 7 specifies —
-event, summary, explainer, analysis, and a comments array whose entries carry path, line,
-severity, body and reply_to.
+# Which review skill: the clicker's own if they brought one, else the global default. Record the
+# id next to the review so learnings can score each skill by how many of its findings get kept.
+ACTOR="${PRBOT_ACTOR:-}"
+USER_SKILL="$ROOT/skills/$ACTOR.md"
+# The output contract — spelled out here so ANY skill (custom or global) yields the exact
+# review.json the dashboard needs, independent of whether the skill itself defines the format.
+CONTRACT="Do NOT print a table and do NOT post anything to GitHub. Write your findings to
+./review.json as a single JSON object: {\"event\":\"COMMENT\", \"summary\":\"…\", \"explainer\":
+\"what this PR does\", \"analysis\":\"what you checked and what you dropped\", \"comments\":[{
+\"path\":\"file\", \"line\":123, \"severity\":\"blocker|should-fix|nit|question\", \"body\":
+\"markdown comment\", \"reply_to\":null}]}. A human reads summary/explainer/analysis in a
+dashboard, then selects, edits and posts individual comments — write that prose for a person and
+keep findings few and high-confidence.${LEARN}"
 
-A human reads explainer and analysis in a dashboard to decide whether to trust the findings,
-then selects, edits and posts individual comments. So: write that prose for a person, set
-reply_to honestly from your Step 1 catalog of existing threads, and keep findings few and
-high-confidence.${LEARN}" \
+if [ -n "$ACTOR" ] && [ -f "$USER_SKILL" ]; then
+  echo "$ACTOR" > "$DIR/skill"
+  PROMPT="Review PR #$PR of $REPO. Follow this reviewing approach:
+
+$(cat "$USER_SKILL")
+
+$CONTRACT"
+else
+  echo "global" > "$DIR/skill"
+  PROMPT="Use the pr-review skill to review PR #$PR of $REPO. Follow its Step 7 automation mode. ${CONTRACT}"
+fi
+
+(cd "$wt" && timeout 25m claude -p "$PROMPT" \
   --allowedTools "Bash Read Glob Grep Write" < /dev/null) >"$DIR/agent.log" 2>&1
 
 [ -s "$wt/review.json" ] || fail "agent produced no review.json (see $DIR/agent.log)"

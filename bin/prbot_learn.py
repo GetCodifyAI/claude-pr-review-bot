@@ -44,12 +44,14 @@ def _read():
     return rows
 
 
-def record(pr, user, originals_sorted, form):
+def record(pr, user, originals_sorted, form, skill="global"):
     """Log the outcome of each original finding for one posted review.
 
     `originals_sorted` is review.json's comments sorted exactly as the dashboard renders them
     (by severity), so form index i lines up. `form` is the parsed POST body: sel_i present =>
-    kept/edited, absent => dropped; body_i is the (possibly edited) text.
+    kept/edited, absent => dropped; body_i is the (possibly edited) text. `skill` is the id of
+    the review skill that produced these findings ("global" or a user login), so we can score
+    which skills produce findings humans actually keep.
     """
     one = lambda k: (form.get(k) or [""])[0]  # noqa: E731
     now = int(time.time())
@@ -64,7 +66,7 @@ def record(pr, user, originals_sorted, form):
             outcome = "edited"
         else:
             outcome = "kept"
-        row = {"at": now, "pr": str(pr), "user": user,
+        row = {"at": now, "pr": str(pr), "user": user, "skill": skill,
                "path": orig.get("path", ""), "line": orig.get("line"),
                "severity": orig.get("severity", "nit"),
                "gist": _gist(ob), "outcome": outcome}
@@ -124,6 +126,25 @@ def counts():
         if o in c:
             c[o] += 1
     return c
+
+
+def skill_stats():
+    """Per-skill quality: kept / edited / dropped counts and a kept-rate, most-used first.
+
+    This is the performance signal — which review skill produces findings humans actually
+    keep — computed from real accept/reject decisions, keyed on the skill that produced them."""
+    by = {}
+    for r in _read():
+        s = r.get("skill", "global")
+        d = by.setdefault(s, {"skill": s, "kept": 0, "edited": 0, "dropped": 0, "total": 0})
+        o = r.get("outcome")
+        if o in ("kept", "edited", "dropped"):
+            d[o] += 1
+            d["total"] += 1
+    for d in by.values():
+        # kept + edited both mean "worth posting"; dropped means "noise". Rate = worth/total.
+        d["rate"] = round(100 * (d["kept"] + d["edited"]) / d["total"]) if d["total"] else 0
+    return sorted(by.values(), key=lambda d: -d["total"])
 
 
 if __name__ == "__main__":       # `python3 -c` path used by run-review.sh prints the block
