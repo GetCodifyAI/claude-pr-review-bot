@@ -1108,6 +1108,10 @@ border-radius:50%;display:inline-block;animation:spin .6s linear infinite}
 box-shadow:var(--shadow)}
 .bar .inner{padding:14px 18px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 .spacer{flex:1}
+.rqtoggle{display:inline-flex;align-items:center;gap:7px;font-size:.82rem;color:var(--dim);
+cursor:pointer;user-select:none;white-space:nowrap}
+.rqtoggle input{width:15px;height:15px;accent-color:#e5495f;cursor:pointer}
+.rqtoggle:hover{color:var(--fg)}
 /* banners */
 .banner{border-radius:12px;padding:14px 16px;margin:14px 0;font-size:.9rem;display:flex;gap:11px;
 align-items:flex-start;border:1px solid;position:relative;overflow:hidden}
@@ -1411,6 +1415,15 @@ function mdrender(src){
   flush();if(list)html+='</ul>';
   return html||'<p class=muted>Nothing to preview.</p>';
 }
+function rqmode(){
+  var c=document.getElementById('rqchk'),b=document.getElementById('submit'),
+      m=document.getElementById('postmode');
+  if(!c||!b)return;
+  if(c.checked){b.textContent='Request changes';b.classList.remove('primary');b.classList.add('warn');
+    if(m)m.textContent='requests changes — can block the PR until updated';}
+  else{b.textContent=b.dataset.deflabel;b.classList.remove('warn');b.classList.add('primary');
+    if(m)m.textContent='posts as plain comments';}
+}
 function fmode(el,edit){
   var w=el.closest('.mdwrap'),pv=w.querySelector('.fpreview'),ta=w.querySelector('.fedit');
   if(edit){ta.hidden=false;pv.hidden=true;}
@@ -1446,6 +1459,10 @@ function peek(id,btn){var i=document.getElementById(id);if(!i)return;
 document.addEventListener('input',function(e){
   if(e.target.id==='pat')tokcheck();if(e.target.id==='slack_id')slackcheck();});
 document.addEventListener('submit',function(e){
+  var rq=e.target.querySelector('#rqchk');
+  if(rq&&rq.checked&&!confirm('This posts a REQUEST_CHANGES review under your name and asks the '+
+     'author for changes \u2014 it can block the PR until it is updated. Continue?')){
+    e.preventDefault();return;}
   var b=e.target.querySelector('button[type=submit]');
   if(b){b.dataset.was=b.textContent;
     b.innerHTML='<span class=spin></span>'+(b.dataset.busy||'Working\u2026');
@@ -2913,10 +2930,15 @@ class Handler(BaseHTTPRequestHandler):
               f"<input type=hidden name=sig value='{sig_p}'>"
               f"<input type=hidden name=count value='{len(comments)}'>"
               f"<div class=bar><div class=inner>"
-              f"<span class='muted sm'><b id=cnt>0</b> selected · posts as plain comments, "
-              f"does not request changes</span>"
+              f"<span class='muted sm'><b id=cnt>0</b> selected · "
+              f"<span id=postmode>posts as plain comments</span></span>"
               f"<span class=spacer></span>"
-              f"<button class='btn primary' id=submit type=submit>{label}</button>"
+              "<label class=rqtoggle title='Post a REQUEST_CHANGES review instead — this asks "
+              "for changes and can block the PR until it is updated'>"
+              "<input type=checkbox name=request_changes id=rqchk onchange='rqmode()'>"
+              " Request changes instead</label>"
+              f"<button class='btn primary' id=submit type=submit data-deflabel='{label}'>"
+              f"{label}</button>"
               f"</div></div></form>")
 
         # --- approve -----------------------------------------------------------------
@@ -3161,9 +3183,9 @@ class Handler(BaseHTTPRequestHandler):
         # No bot signature: this posts under the reviewer's own account, so GitHub already
         # attributes it. A trailing "Reviewed by @x" only restates the byline.
         body = (rev.get("summary") or "").strip() + prbot_diff.orphan_block(orphans)
-        # Always a plain comment review. REQUEST_CHANGES blocks the PR and reads as a
-        # verdict; these are review notes, and the human approves separately.
-        event = "COMMENT"
+        # Default is a plain COMMENT review. The reviewer can deliberately choose REQUEST_CHANGES
+        # from the post bar (never the agent's call) — a human-only, blocking action.
+        event = "REQUEST_CHANGES" if form.get("request_changes") else "COMMENT"
         payload = {"body": body, "event": event, "comments": inline}
         ud = udir(pr, user)
         ud.mkdir(parents=True, exist_ok=True)
