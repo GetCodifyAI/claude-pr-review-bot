@@ -39,6 +39,8 @@ all — it only produces a JSON file the dashboard renders.
 - **Re-review on push** — flags a review as stale when the author pushes new commits.
 - **Per-user Claude account** — connect your own Claude account so reviews you start bill to
   your plan; otherwise they use the shared box login.
+- **Guided setup** — a first-run tour walks a new user through connecting Claude & Slack and
+  picking a skill before their first review (re-runnable from "Take a tour" in the sidebar).
 - **Human-gated & COMMENT-only** — nothing auto-posts, and Robin never requests changes or
   blocks a merge.
 

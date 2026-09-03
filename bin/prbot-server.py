@@ -988,6 +988,7 @@ th{color:var(--faint);font-size:.72rem;text-transform:uppercase;letter-spacing:.
 tbody tr:last-child td{border-bottom:0}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
 padding:20px 22px;box-shadow:var(--shadow);animation:rise .5s cubic-bezier(.2,.7,.2,1) both}
+.card.top{margin-top:18px}
 /* pills */
 .pill{display:inline-flex;align-items:center;padding:3px 10px;border-radius:999px;
 font-size:.7rem;font-weight:700;letter-spacing:.03em;text-transform:uppercase;
@@ -1141,6 +1142,9 @@ border-radius:9px;border:1px solid transparent}
 /* active-skill selector */
 .skillsel{display:flex;gap:9px;flex-wrap:wrap;margin:2px 0 4px}
 .skillsel .eff{flex:1 1 200px}
+.eff.off{opacity:.45;cursor:not-allowed}.eff.off:hover{border-color:var(--line)}
+.skilled{margin:8px 0}.skilled summary .tag-on,.skilled summary .tag-off{margin-left:8px}
+.nowrap{white-space:nowrap}
 /* quick-add rule */
 .rulebox{margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
 .rule-lbl{font-size:.82rem;font-weight:650;color:var(--fg);margin-bottom:8px}
@@ -1335,8 +1339,25 @@ color:var(--dim);font-size:.8rem;font-weight:600;cursor:pointer;padding:6px 10px
 @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 @keyframes spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+.foota{display:flex;gap:14px;align-items:center}
+/* guided tour */
+.tourv{position:fixed;inset:0;z-index:60}
+.tourmask{position:absolute;inset:0;background:transparent}
+.tourv.dim .tourmask{background:rgba(4,6,14,.72);backdrop-filter:blur(1px)}
+.tourring{position:absolute;display:none;border-radius:12px;box-shadow:0 0 0 3px #6a65ec,
+0 0 0 9999px rgba(4,6,14,.72);transition:all .25s cubic-bezier(.2,.7,.2,1);pointer-events:none}
+.tourcard{position:absolute;width:340px;max-width:calc(100vw - 32px);background:var(--panel2);
+border:1px solid var(--line2);border-radius:16px;padding:18px 20px;
+box-shadow:0 30px 80px -30px rgba(0,0,0,.9);animation:rise .3s both}
+.tourh{font-size:1.05rem;font-weight:700;margin-bottom:6px}
+.tourtext{font-size:.9rem;color:var(--dim);line-height:1.55}
+.tourdots{display:flex;gap:6px;margin:14px 0}
+.tdot{width:7px;height:7px;border-radius:50%;background:var(--line2)}
+.tdot.on{background:var(--grad);width:18px;border-radius:4px}
+.tourbtns{display:flex;align-items:center;gap:8px}.tourbtns .spacer{flex:1}
 @media(max-width:640px){.wrap{padding:20px 15px 0}.thread{margin-left:0}
-h1{font-size:1.28rem}.topbar{padding:0 15px}}
+h1{font-size:1.28rem}.topbar{padding:0 15px}
+.tourcard{left:50%!important;top:auto!important;bottom:16px;transform:translateX(-50%)!important}}
 """
 
 JS = r"""
@@ -1385,6 +1406,70 @@ document.addEventListener('submit',function(e){
     b.innerHTML='<span class=spin></span>'+(b.dataset.busy||'Working\u2026');
     setTimeout(function(){b.disabled=true;},0);}});
 document.addEventListener('DOMContentLoaded',function(){tokcheck();slackcheck();});
+
+/* ---- first-run guided tour ---------------------------------------------------------- */
+var TOUR=[
+ {title:'Welcome to Robin 👋',
+  text:"Robin drafts the PR reviews you owe your team. You tick what's worth saying and post it — as yourself. Here's the 30-second setup."},
+ {sel:'[data-tour="integrations"]',title:'1. Connect your accounts',
+  text:'Start in Integrations: add your Claude account (reviews run on it) and your Slack member ID (so Robin can ping you when a review is requested).'},
+ {sel:'[data-tour="skills"]',title:'2. Pick a review skill',
+  text:'Robin follows a review skill. The shared team default works out of the box — or bring your own here. You can switch any time.'},
+ {sel:'[data-tour="queuelist"]',title:'3. Your review queue',
+  text:'PRs waiting on your review land here. Open one, choose an effort level, and Robin drafts the review — nothing posts to GitHub without your click.'},
+ {title:"You're set 🎉",
+  text:'Open a PR from your queue to run your first review. You stay the reviewer — Robin just does the reading and drafting.',
+  cta:{label:'Go to Integrations',href:'/prbot/integrations'}}
+];
+var _ti=0;
+function _tourEl(){return document.getElementById('tourv');}
+function endTour(){try{localStorage.setItem('robin_tour','done');}catch(e){}
+  var v=_tourEl();if(v)v.remove();}
+function _renderTour(){
+  var s=TOUR[_ti],v=_tourEl();if(!v)return;
+  var ring=v.querySelector('.tourring'),card=v.querySelector('.tourcard');
+  var tgt=s.sel?document.querySelector(s.sel):null;
+  v.classList.toggle('dim',!tgt);
+  if(tgt){tgt.scrollIntoView({block:'center',behavior:'smooth'});
+    var r=tgt.getBoundingClientRect(),pad=6;
+    ring.style.display='block';
+    ring.style.left=(r.left-pad)+'px';ring.style.top=(r.top-pad)+'px';
+    ring.style.width=(r.width+pad*2)+'px';ring.style.height=(r.height+pad*2)+'px';
+  } else {ring.style.display='none';}
+  var dots='';for(var i=0;i<TOUR.length;i++)dots+='<span class="tdot'+(i===_ti?' on':'')+'"></span>';
+  var next=_ti===TOUR.length-1?'Done':'Next';
+  var ctaBtn=s.cta?('<a class="btn primary" href="'+s.cta.href+'">'+s.cta.label+'</a>'):
+     ('<button class="btn primary" onclick="tourNext()">'+next+'</button>');
+  card.innerHTML='<div class=tourh>'+s.title+'</div><div class=tourtext>'+s.text+'</div>'+
+    '<div class=tourdots>'+dots+'</div>'+
+    '<div class=tourbtns><button class="btn ghost" onclick="endTour()">Skip</button>'+
+    '<span class=spacer></span>'+
+    (_ti>0?'<button class="btn soft" onclick="tourPrev()">Back</button>':'')+ctaBtn+'</div>';
+  /* position the card near the target, else center */
+  if(tgt){var r2=tgt.getBoundingClientRect();
+    card.style.left=Math.min(window.innerWidth-360,Math.max(16,r2.right+14))+'px';
+    card.style.top=Math.max(16,r2.top)+'px';card.style.transform='none';}
+  else{card.style.left='50%';card.style.top='50%';card.style.transform='translate(-50%,-50%)';}
+}
+function tourNext(){if(_ti>=TOUR.length-1){endTour();return;}_ti++;_renderTour();}
+function tourPrev(){if(_ti>0){_ti--;_renderTour();}}
+function startTour(force){
+  if(!document.querySelector('[data-tour="integrations"]'))return;   /* app shell only */
+  _ti=0;
+  var v=document.createElement('div');v.id='tourv';v.className='tourv';
+  v.innerHTML='<div class=tourmask></div><div class=tourring></div><div class=tourcard></div>';
+  document.body.appendChild(v);
+  v.querySelector('.tourmask').addEventListener('click',endTour);
+  window.addEventListener('resize',_renderTour);
+  _renderTour();
+}
+document.addEventListener('DOMContentLoaded',function(){
+  /* only the queue index (it has the stats strip) auto-starts — not PR detail pages */
+  if(document.querySelector('[data-tour="queuelist"]')){
+    var seen=false;try{seen=localStorage.getItem('robin_tour')==='done';}catch(e){}
+    if(!seen)setTimeout(function(){startTour();},450);
+  }
+});
 """
 
 
@@ -1416,8 +1501,8 @@ def sidebar(user, active):
              ("integrations", "Integrations", "/prbot/integrations"),
              ("how", "How it works", "/prbot/how")]
     nav = "".join(
-        f"<a class='ni{' on' if active == k else ''}' href='{href}'>{NAV_ICONS[k]}"
-        f"<span>{label}</span></a>" for k, label, href in items)
+        f"<a class='ni{' on' if active == k else ''}' href='{href}' data-tour='{k}'>"
+        f"{NAV_ICONS[k]}<span>{label}</span></a>" for k, label, href in items)
     av = html.escape((user[:1] or "?").upper())
     sk = "your skill" if effective_skill(user)[0] == "own" else "team default"
     return (f"<aside class=side><a class=brand href='/prbot/'>"
@@ -1430,7 +1515,8 @@ def sidebar(user, active):
             + ("dry run" if DRY_RUN else "live") + "</span>"
             f"<div class=who><span class=av>{av}</span>"
             f"<span class=nm>{html.escape(user)}</span></div>"
-            f"<a class=so href='/prbot/logout'>Sign out</a></div></aside>")
+            f"<div class=foota><a class=so href='#' onclick='startTour(1);return false'>Take a "
+            f"tour</a><a class=so href='/prbot/logout'>Sign out</a></div></div></aside>")
 
 
 def shell(title, body, refresh=None, user=None, active=None, auth=False):
@@ -1447,7 +1533,7 @@ def shell(title, body, refresh=None, user=None, active=None, auth=False):
     if auth:                                    # sign-in: full-page centered card, no chrome
         inner = body
     elif user:                                  # signed-in pages get the sidebar app-shell
-        inner = (f"<div class=app>{sidebar(user, active)}"
+        inner = (f"<div class=app data-page='{active or ''}'>{sidebar(user, active)}"
                  f"<main class=main><div class=wrap>{body}</div></main></div>")
     else:                                       # error pages: bare centered layout
         inner = (f"<div class=topbar><a class=brand href='/prbot/'>"
@@ -2279,14 +2365,11 @@ class Handler(BaseHTTPRequestHandler):
             secondary = ((f"<button class='btn soft' type=submit form={rid}>Clear (use team "
                           f"default)</button>") if cur else "")
         save_form = (
-            "<div class=hint>Load a local skill onto the clipboard, then paste it here:<br>"
-            "<code>cat ~/.claude/skills/pr-review/SKILL.md | pbcopy</code> (macOS) · "
-            "<code>… | xclip -selection clipboard</code> or <code>… | wl-copy</code> (Linux)."
-            "</div>"
             "<form method=post action='/prbot/skill/save'>"
-            "<textarea class=in name=skill spellcheck=false style='min-height:130px;"
-            f"font-size:12.5px;margin-top:8px' placeholder='{ph}'>{html.escape(cur)}</textarea>"
-            f"<div class=hint>{foot}</div>" + hidden
+            "<textarea class=in name=skill spellcheck=false style='min-height:150px;"
+            f"font-size:12.5px' placeholder='{ph}'>{html.escape(cur)}</textarea>"
+            f"<div class=hint>{foot} <span class=nowrap>Tip: <code>… SKILL.md | pbcopy</code> "
+            "to copy a local skill, then paste.</span></div>" + hidden
             + "<div class=inrow style='margin-top:10px'>"
               "<button class='btn primary' type=submit data-busy='Saving…'>Save skill</button>"
             + (secondary if not is_global else "") + "</div></form>"
@@ -2313,44 +2396,46 @@ class Handler(BaseHTTPRequestHandler):
                   f"<input type=hidden name=sig value='{sig}'>"
                   "<input type=hidden name=from value='skills'>")
         # The active-skill selector — the one control that answers "which skill runs my reviews?".
-        opt = lambda v, name, sub: (
-            f"<label class='eff{' hot' if choice == v else ''}'>"
-            f"<input type=radio name=choice value='{v}'{' checked' if choice == v else ''} "
-            "onchange='this.form.submit()'>"
+        # "My own skill" is disabled until a personal skill actually exists.
+        opt = lambda v, name, sub, dis=False: (
+            f"<label class='eff{' hot' if choice == v else ''}{' off' if dis else ''}'>"
+            f"<input type=radio name=choice value='{v}'{' checked' if choice == v else ''}"
+            f"{' disabled' if dis else ''} onchange='this.form.submit()'>"
             f"<span class=effname>{name}</span><span class=effsub>{sub}</span></label>")
         selector = (
-            "<div class=card style='margin-bottom:6px'><h4 style='margin-top:0'>Which skill runs "
-            "your reviews?</h4>"
+            "<div class=card><h4 style='margin-top:0'>Which skill runs your reviews?</h4>"
             "<form method=post action='/prbot/skill/use'>"
             "<div class=skillsel>"
             + opt("team", "Team default", "the shared reviewing approach")
             + opt("own", "My own skill",
-                  "your personal skill" + ("" if my_skill else " — none yet, add one below"))
+                  "your personal skill" if my_skill else "add a skill below to use it",
+                  dis=not my_skill)
             + "</div>" + hidden + "<noscript><button class='btn soft' type=submit>Use this"
             "</button></noscript></form>"
-            f"<div class=hint>Right now your reviews run with <b>{eff_lbl}</b>. Learnings sharpen "
-            "whichever skill runs — every finding you keep or drop feeds the next review.</div>"
+            f"<div class=hint>Reviews run with <b>{eff_lbl}</b>. Learnings sharpen whichever skill "
+            "runs — every finding you keep or drop feeds the next review.</div>"
             "</div>")
-        team_card = (
-            "<div class=card style='margin-bottom:6px'>"
-            "<h4 style='margin-top:0'>Team default skill "
-            + ("<span class=tag-on style='margin-left:6px'>Edited</span>" if has_global
-               else "<span class=tag-off style='margin-left:6px'>Installed default</span>")
-            + "</h4><p class='muted sm' style='margin-top:0'>The shared skill everyone falls "
-            "back to. Editing this changes reviews for everyone without their own skill.</p>"
-            + self.skill_control(user, exp, sig, target="global", frm="skills") + "</div>")
-        skill_card = (
-            "<div class=card style='margin-bottom:6px'>"
-            "<h4 style='margin-top:0'>Your review skill "
-            + ("<span class=tag-on style='margin-left:6px'>Custom</span>" if my_skill
-               else "<span class=tag-off style='margin-left:6px'>Team default</span>")
-            + "</h4>" + self.skill_control(user, exp, sig, frm="skills") + "</div>")
+
+        # Editors are collapsed by default so the page reads as: pick a skill, see the scores.
+        def editor(summary, chip, ctl):
+            return (f"<details class=skilled><summary>{summary} {chip}</summary>"
+                    f"<div class=dbody>{ctl}</div></details>")
+        team_chip = ("<span class=tag-on>Edited</span>" if has_global
+                     else "<span class=tag-off>Built-in</span>")
+        team_ed = editor("Edit the team default skill", team_chip,
+                         "<p class='muted sm' style='margin-top:0'>The shared skill everyone "
+                         "falls back to. Editing it changes reviews for everyone without their "
+                         "own.</p>" + self.skill_control(user, exp, sig, target="global",
+                                                         frm="skills"))
+        my_chip = ("<span class=tag-on>Custom</span>" if my_skill
+                   else "<span class=tag-off>None yet</span>")
+        my_ed = editor("Edit your own skill", my_chip,
+                       self.skill_control(user, exp, sig, frm="skills"))
         stats = prbot_learn.skill_stats()
         head = (f"<h1>Review skills</h1>"
                 "<p class=lead>The skill is the reviewing approach Robin follows. Pick which one "
-                "runs your reviews, edit the shared team default or bring your own, and see how "
-                "each scores by how often its findings are kept.</p>"
-                + banner + selector + team_card + skill_card + "<h2>How each skill scores</h2>")
+                "runs your reviews; edit either one below.</p>"
+                + banner + selector + team_ed + my_ed + "<h2>How each skill scores</h2>")
         if not stats:
             body = head + ("<div class=empty><span class=ic>🧭</span><b>No scores yet</b>Post a "
                            "few reviews and each skill's kept-rate will show up here.</div>")
@@ -2504,7 +2589,7 @@ class Handler(BaseHTTPRequestHandler):
                 cls += " on"
             return (f"<a class='{cls}' href='{q(tab=k, sort=sort)}'>"
                     f"<div class=k>{counts[k]}</div><div class=l>{label}</div></a>")
-        strip = ("<div class=stats>"
+        strip = ("<div class=stats data-tour=queuelist>"
                  + stat("todo", "Awaiting your review", hot=True)
                  + stat("reviewed", "Ready to post")
                  + stat("posted", "Pending approval")
@@ -2607,7 +2692,7 @@ class Handler(BaseHTTPRequestHandler):
             note = ("<div class='banner warn'><span>🛑</span><div><b>Review stopped.</b> You "
                     "stopped this review before it finished — start a new run below.</div></div>")
             return self.reply(200, shell(f"#{pr}", head + note + (
-                f"<div class=card>{self.run_form(pr, user, meta, label='Start review')}"
+                f"<div class='card top'>{self.run_form(pr, user, meta, label='Start review')}"
                 f"<p style='margin-top:10px'><a class=btn href='{link('archive', pr)}'>Archive"
                 f"</a></p></div>") + self.rerun_history_only(pr), user=user, active="queue"))
 
@@ -2621,7 +2706,7 @@ class Handler(BaseHTTPRequestHandler):
                 "running now. Re-run it below."
                 + (f"<br>Agent output: <code>{html.escape(tail)}</code>" if tail else "")
                 + "</div></div>"
-                f"<div class=card>{self.run_form(pr, user, meta, label='Re-run review')}"
+                f"<div class='card top'>{self.run_form(pr, user, meta, label='Re-run review')}"
                 f"<p style='margin-top:10px'><a class=btn href='{link('archive', pr)}'>Archive"
                 f"</a></p></div>") + self.rerun_history_only(pr), user=user, active="queue"))
 
@@ -2652,7 +2737,7 @@ class Handler(BaseHTTPRequestHandler):
                         "<button class='btn soft' type=submit data-busy='Stopping…'>Stop review"
                         "</button></form>")
             panel = (
-                "<div class=card><div class=prog-hd>Drafting review for "
+                "<div class='card top'><div class=prog-hd>Drafting review for "
                 f"<b>#{pr}</b> · <span class='muted sm'>{EFFORT[reff][0]} effort</span></div>"
                 f"<ul class=prog>{''.join(steps)}</ul>"
                 "<div class=progbar><div class=progfill></div></div>"
@@ -2670,7 +2755,7 @@ class Handler(BaseHTTPRequestHandler):
                         f"</div>")
             approved = (self.approved_card(pr, user)
                         if marker(pr, "approved", user).get("at") else "")
-            body = (f"<div class=card><h4>Not reviewed here</h4>"
+            body = (f"<div class='card top'><h4>Not reviewed here</h4>"
                     f"<p class='muted sm'>No review has been run for this PR on this box.</p>"
                     f"{self.run_form(pr, user, meta)}</div>"
                     + self.rerun_history_only(pr)) if not approved else approved
