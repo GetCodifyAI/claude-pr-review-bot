@@ -122,6 +122,27 @@ prose readable rather than a wall of bullet points.
 
 The worktree is removed as soon as `review.json` is copied out.
 
+## Subsystems added since the first cut
+
+- **Learnings** (`prbot_learn.py`): on post, each original finding is scored dropped / edited /
+  kept and appended to `learnings.jsonl` (short gists, capped). `render()` folds recent
+  dropped/edited rows into the next review prompt so the agent stops re-raising rejected noise;
+  the `/learnings` page shows it. Shared per repo, attributed per user. Not ML — in-context
+  steering with your own recent decisions.
+- **Skills**: a user can bring their own review skill (`~/.claude-pr-bot/skills/<login>.md`).
+  `run-review.sh` picks the clicker's skill (`PRBOT_ACTOR`) or the global default, runs its
+  logic, and **always appends an explicit `review.json` output contract**, so any skill yields
+  the shape the dashboard needs. Each review records the skill id (`state/<pr>/skill`); learnings
+  rows carry it; the `/skills` page scores each skill by kept-rate. The flywheel: usage →
+  accept/reject signal → which skills work → a better global skill (human-approved).
+- **Suggestion blocks**: a finding may carry a `suggestion` (single-line replacement); on post
+  it's appended to the comment body as a GitHub ```` ```suggestion ```` block (one-click apply).
+- **Staleness**: `run-review.sh` records the reviewed head SHA (`state/<pr>/head`); the detail
+  page flags the review stale when the PR's current head differs — without auto-re-running.
+- **Slack threading**: with `SLACK_BOT_TOKEN` + `SLACK_CHANNEL`, `slack_post` uses
+  `chat.postMessage`, stores the request card's ts, and threads the review-ready reply under it;
+  otherwise it falls back to the send-only webhook.
+
 ## Relationship to the `@patchwork` bot
 
 There is a sibling in the monolith at `tools/claude-pr-bot/pr-bot.sh` — the `@patchwork`

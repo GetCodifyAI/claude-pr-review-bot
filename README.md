@@ -1,11 +1,32 @@
-# Claude PR Review Bot
+# Robin — the Claude PR review bot
+
+**Robin drafts the PR reviews you owe your team, and lets you send them with a click — under
+your own name, never automatically.** A reviewer's assistant, not a review bot.
 
 Someone requests your review on a Cut+Dry PR → you get a **Slack ping** → you click through
-to a **dashboard** → an agent has already read the diff and written findings → you tick the
+to a **dashboard** → the agent has already read the diff and written findings → you tick the
 ones worth posting, edit any of them, post **as yourself**, and approve — in one place.
 
 Nothing reaches GitHub without a human clicking. The review step never writes to GitHub at
 all — it only produces a JSON file the dashboard renders.
+
+## Features
+
+- **Per-reviewer identity** — every comment and approval posts under *your* GitHub account
+  (your own token), never a bot. One box serves the whole team; the review is shared per PR,
+  posting/approval is per person.
+- **Learnings loop** — when you drop a finding as noise or reword one, Robin remembers and
+  feeds it into the next review of the repo, so it stops repeating what you reject.
+- **Bring your own review skill** — paste your `pr-review` skill in Integrations; Robin runs
+  its logic and appends its own output contract so any skill works. A **Skills** page scores
+  each skill by how often its findings are kept vs dropped — the signal for improving the
+  shared default.
+- **GitHub suggestion blocks** — findings can carry a one-click-apply code fix for the author.
+- **Re-review on push** — flags a review as stale when the author pushes new commits.
+- **Per-user Claude account** — connect your own Claude account so reviews you start bill to
+  your plan; otherwise they use the shared box login.
+- **Human-gated & COMMENT-only** — nothing auto-posts, and Robin never requests changes or
+  blocks a merge.
 
 ```
 review requested
@@ -56,12 +77,15 @@ selection, posting and approval are per person. See [docs/SETUP.md](docs/SETUP.m
 | --------------------------- | ------------------------------------------------------------------- |
 | `bin/bootstrap.sh`          | Installs everything. Idempotent — re-run it whenever                |
 | `bin/pr-watch.sh`           | cron, every 3 min: finds PRs awaiting your review, posts Slack cards |
-| `bin/prbot-server.py`       | The dashboard. systemd, bound to `127.0.0.1:8899`                   |
-| `bin/run-review.sh`         | One review: worktree → `claude -p` → `review.json`                  |
+| `bin/prbot-server.py`       | The dashboard (queue, review, Learnings, Skills, Integrations). systemd, `127.0.0.1:8899` |
+| `bin/run-review.sh`         | One review: worktree → `claude -p` (chosen skill + output contract) → `review.json` |
 | `bin/prbot_diff.py`         | Diff-anchor validation, so GitHub can't 422 a whole review          |
 | `bin/prbot_md.py`           | Dependency-free markdown → HTML                                     |
-| `bin/lib-common.sh`         | Config, HMAC link signing, Slack posting                            |
-| `skills/pr-review/SKILL.md` | The review procedure. Bootstrap installs it to `~/.claude/skills/`  |
+| `bin/prbot_learn.py`        | Learnings loop: records dropped/edited/kept, scores skills, feeds the review prompt |
+| `bin/prbot_assets.py`       | Inlined brand logo + favicon (base64)                              |
+| `bin/lib-common.sh`         | Config, HMAC link signing, Slack posting (webhook or bot-token threading) |
+| `skills/pr-review/SKILL.md` | The default review procedure. Bootstrap installs it to `~/.claude/skills/` |
+| `assets/logo.png`           | Source brand logo                                                   |
 | `config.example`            | Every `.env` knob, annotated. Reference only — bootstrap writes the real one |
 
 ## Requirements
