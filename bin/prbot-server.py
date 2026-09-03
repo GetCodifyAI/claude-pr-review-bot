@@ -1141,9 +1141,10 @@ box-shadow:0 0 0 1px #6a65ec inset}
 .restorebox summary{padding:0;font-size:.82rem;font-weight:500;color:var(--dim)}
 .restorebox summary:hover{color:var(--fg)}
 .restorebox[open]{padding:0}
-.skillchip{align-self:flex-start;font-size:.72rem;font-weight:600;color:var(--dim);
-background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:3px 10px}
-.skillchip:hover{color:var(--fg);border-color:var(--line2)}
+.whot{display:flex;flex-direction:column;gap:1px;min-width:0}
+.skillline{font-size:.72rem;color:var(--faint);font-weight:500;white-space:nowrap;overflow:hidden;
+text-overflow:ellipsis}
+.skillline:hover{color:var(--dim)}
 .effbadge{font-size:.68rem;font-weight:700;letter-spacing:.03em;text-transform:uppercase;
 padding:3px 9px;border-radius:999px;background:rgba(91,124,250,.16);color:#bcd0ff;
 border:1px solid rgba(91,124,250,.3)}
@@ -1265,7 +1266,7 @@ text-transform:uppercase;padding:3px 9px;border-radius:999px}
 background:rgba(10,11,18,.85);backdrop-filter:saturate(140%) blur(14px)}
 .side .brand{padding:0 4px 0 0}.nav{flex-direction:row;margin:0;gap:2px}.ni span{display:none}.ni{padding:8px}
 .sidefoot{margin:0 0 0 auto;flex-direction:row;align-items:center;border-top:0;padding:0;gap:10px}
-.sidefoot .nm,.sidefoot .live,.sidefoot .skillchip{display:none}.main .wrap{padding:22px 16px 0}}
+.sidefoot .nm,.sidefoot .live,.sidefoot .skillline{display:none}.main .wrap{padding:22px 16px 0}}
 /* integration cards */
 .intg{padding:22px 24px;border:1px solid var(--line);border-radius:16px;margin:16px 0;
 background:linear-gradient(180deg,rgba(255,255,255,.022),transparent 40%),var(--panel);
@@ -1411,7 +1412,7 @@ function mdrender(src){
   return html||'<p class=muted>Nothing to preview.</p>';
 }
 function fmode(el,edit){
-  var w=el.closest('.fbody'),pv=w.querySelector('.fpreview'),ta=w.querySelector('.fedit');
+  var w=el.closest('.mdwrap'),pv=w.querySelector('.fpreview'),ta=w.querySelector('.fedit');
   if(edit){ta.hidden=false;pv.hidden=true;}
   else{pv.innerHTML=mdrender(ta.value);pv.hidden=false;ta.hidden=true;}
   w.querySelectorAll('.fmode').forEach(function(b){b.classList.remove('on');});
@@ -1553,12 +1554,12 @@ def sidebar(user, active):
             f"<img src='{prbot_assets.LOGO}' alt=''><span class=n>{html.escape(BRAND)}</span></a>"
             f"<nav class=nav>{nav}</nav>"
             f"<div class=sidefoot>"
-            f"<a class=skillchip href='/prbot/skills' title='Which skill runs your reviews'>"
-            f"⚙ {sk}</a>"
             f"<span class='live {'dry' if DRY_RUN else 'on'}'>"
             + ("dry run" if DRY_RUN else "live") + "</span>"
             f"<div class=who><span class=av>{av}</span>"
-            f"<span class=nm>{html.escape(user)}</span></div>"
+            f"<div class=whot><span class=nm>{html.escape(user)}</span>"
+            f"<a class=skillline href='/prbot/skills' "
+            f"title='Which skill runs your reviews'>⚙ {sk}</a></div></div>"
             f"<div class=foota><a class=so href='#' onclick='startTour(1);return false'>Take a "
             f"tour</a><a class=so href='/prbot/logout'>Sign out</a></div></div></aside>")
 
@@ -2811,6 +2812,18 @@ class Handler(BaseHTTPRequestHandler):
         return self.reply(200, shell(f"#{pr}", head + self.review_body(pr, rev, user),
                                      user=user, active="queue"))
 
+    def md_editor(self, name, value, ta_attrs=""):
+        """A markdown field with Preview (formatted) / Edit (code) tabs. Used for finding
+        comments and the approval message. The textarea (name) is the posted source of truth."""
+        return (
+            "<div class=mdwrap>"
+            "<div class=ftabs><button type=button class='fmode on' onclick='fmode(this,0)'>"
+            "Preview</button><button type=button class=fmode onclick='fmode(this,1)'>Edit"
+            "</button></div>"
+            f"<div class=fpreview>{prbot_md.render(value)}</div>"
+            f"<textarea class=fedit name='{name}' {ta_attrs} hidden>{html.escape(value)}"
+            "</textarea></div>")
+
     def review_body(self, pr, rev, user):
         ev = rev.get("event", "COMMENT")
         comments = sorted(rev.get("comments", []),
@@ -2867,12 +2880,7 @@ class Handler(BaseHTTPRequestHandler):
                 f"<span class=loc>{html.escape(loc)}</span>"
                 f"<span class=thread>{thread}</span></div>"
                 f"<div class=fbody>"
-                "<div class=ftabs><button type=button class='fmode on' onclick='fmode(this,0)'>"
-                "Preview</button><button type=button class=fmode onclick='fmode(this,1)'>Edit"
-                "</button></div>"
-                f"<div class=fpreview>{prbot_md.render(c.get('body', ''))}</div>"
-                f"<textarea class=fedit name='body_{i}' hidden>"
-                f"{html.escape(c.get('body', ''))}</textarea>"
+                + self.md_editor(f"body_{i}", c.get("body", ""))
                 + sugg_box
                 + f"<input type=hidden name='path_{i}' value='{html.escape(c.get('path', ''))}'>"
                 f"<input type=hidden name='line_{i}' value='{c.get('line', '')}'>"
@@ -2936,12 +2944,12 @@ class Handler(BaseHTTPRequestHandler):
             f"<form method=post action='/prbot/approve'>"
             f"<label class='muted sm'>Approval comment — posted on the PR as a whole, "
             f"then the PR is approved</label>"
-            f"<textarea class=short name=approve_body>{html.escape(default_msg)}</textarea>"
-            f"{ack}"
+            + self.md_editor("approve_body", default_msg)
+            + f"{ack}"
             f"<input type=hidden name=pr value='{pr}'>"
             f"<input type=hidden name=exp value='{exp_a}'>"
             f"<input type=hidden name=sig value='{sig_a}'>"
-            f"<p><button class='btn warn' type=submit>"
+            f"<p><button class='btn primary' type=submit>"
             + ("Approve (dry run)" if DRY_RUN else f"Approve #{pr} as {html.escape(user)}")
             + "</button></p></form>"
               "<p class='muted sm'>Checks the PR is open, is not yours, and was reviewed "
