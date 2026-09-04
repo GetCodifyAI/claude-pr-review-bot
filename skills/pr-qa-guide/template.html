@@ -1,0 +1,489 @@
+<title>QA Guide — {FEATURE NAME} ({TICKET})</title>
+<style>
+  :root {
+    --ground: #f9fafb;
+    --surface: #ffffff;
+    --surface-2: #f2f4f7;
+    --ink: #101828;
+    --ink-2: #475467;
+    --ink-3: #667085;
+    --line: #d0d5dd;
+    --line-soft: #eaecf0;
+    --signal: #b45309;
+    --signal-bg: #fff6e6;
+    --signal-edge: #ffa601;
+    --danger: #b42318;
+    --danger-bg: #fef3f2;
+    --danger-edge: #f04438;
+    --ok: #067647;
+    --ok-bg: #ecfdf3;
+    --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+      "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+      "Liberation Mono", monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0e1520;
+      --surface: #161f2c;
+      --surface-2: #1d2836;
+      --ink: #e8ecf2;
+      --ink-2: #a8b4c4;
+      --ink-3: #8494a8;
+      --line: #2b3747;
+      --line-soft: #222d3b;
+      --signal: #fbbf24;
+      --signal-bg: #2a1f0a;
+      --signal-edge: #b47a12;
+      --danger: #fda29b;
+      --danger-bg: #2c1414;
+      --danger-edge: #b42318;
+      --ok: #75e0a7;
+      --ok-bg: #0c2b1c;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #0e1520;
+    --surface: #161f2c;
+    --surface-2: #1d2836;
+    --ink: #e8ecf2;
+    --ink-2: #a8b4c4;
+    --ink-3: #8494a8;
+    --line: #2b3747;
+    --line-soft: #222d3b;
+    --signal: #fbbf24;
+    --signal-bg: #2a1f0a;
+    --signal-edge: #b47a12;
+    --danger: #fda29b;
+    --danger-bg: #2c1414;
+    --danger-edge: #b42318;
+    --ok: #75e0a7;
+    --ok-bg: #0c2b1c;
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.6;
+    margin: 0;
+    padding: 0 24px 96px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 44px; }
+  header { padding-top: 64px; display: flex; flex-direction: column; gap: 14px; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+  }
+
+  h1 {
+    font-size: clamp(30px, 5vw, 42px);
+    line-height: 1.1;
+    letter-spacing: -0.025em;
+    font-weight: 700;
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  .standfirst { font-size: 18px; color: var(--ink-2); margin: 0; max-width: 62ch; }
+
+  h2 {
+    font-size: 13px;
+    font-family: var(--mono);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: var(--ink-3);
+    margin: 0 0 18px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+
+  h3 { font-size: 17px; font-weight: 650; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  p { margin: 0; max-width: 68ch; }
+  section { display: flex; flex-direction: column; }
+
+  .setup {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 22px 24px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 22px 28px;
+  }
+  .setup div { display: flex; flex-direction: column; gap: 6px; }
+  .setup dt {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .setup dd { margin: 0; font-size: 15px; color: var(--ink); }
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.875em;
+    background: var(--surface-2);
+    border: 1px solid var(--line-soft);
+    border-radius: 4px;
+    padding: 1px 5px;
+    word-break: break-word;
+  }
+
+  /* Inline mock of a new UI element — restyle to resemble the actual feature. */
+  .ui-demo {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #fff8e6;
+    border: 1px solid #ffd68a;
+    color: #735215;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 3px 9px;
+    font-family: var(--sans);
+  }
+
+  .tier { display: flex; flex-direction: column; gap: 14px; }
+  .tier-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .tier-head p { font-size: 15px; color: var(--ink-2); }
+
+  .pill {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    padding: 3px 9px;
+    border-radius: 999px;
+    white-space: nowrap;
+    border: 1px solid;
+  }
+  .p0 { color: var(--danger); background: var(--danger-bg); border-color: var(--danger-edge); }
+  .p1 { color: var(--signal); background: var(--signal-bg); border-color: var(--signal-edge); }
+  .p2 { color: var(--ink-2); background: var(--surface-2); border-color: var(--line); }
+
+  .case {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--line);
+    border-radius: 8px;
+    padding: 18px 20px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .tier-0 .case { border-left-color: var(--danger-edge); }
+  .tier-1 .case { border-left-color: var(--signal-edge); }
+  .tier-2 .case { border-left-color: var(--line); }
+
+  .steps { display: flex; flex-direction: column; gap: 8px; }
+  .step { display: grid; grid-template-columns: 68px 1fr; gap: 14px; align-items: start; }
+  .step .label {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    padding-top: 4px;
+  }
+  .step .body { font-size: 15px; color: var(--ink-2); }
+  .step .body strong { color: var(--ink); font-weight: 600; }
+
+  /* Plain-language case card: framing line, "you need", numbered steps, verdicts. */
+  .plain { font-size: 15px; color: var(--ink-2); }
+  .qa-need {
+    background: var(--surface-2);
+    border: 1px solid var(--line-soft);
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-size: 14.5px;
+    color: var(--ink-2);
+  }
+  .qa-need strong { color: var(--ink); font-weight: 600; }
+  ol.qa-steps {
+    margin: 0;
+    padding-left: 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+  ol.qa-steps li { font-size: 15px; color: var(--ink-2); padding-left: 2px; }
+  ol.qa-steps li strong { color: var(--ink); font-weight: 600; }
+  .verdict { display: flex; flex-direction: column; gap: 7px; }
+  .pass, .fail {
+    font-size: 14.5px;
+    border-radius: 6px;
+    padding: 9px 13px;
+    border: 1px solid;
+  }
+  .pass { color: var(--ok); background: var(--ok-bg); border-color: var(--ok); }
+  .fail { color: var(--danger); background: var(--danger-bg); border-color: var(--danger-edge); }
+
+  .why {
+    font-size: 14px;
+    color: var(--ink-3);
+    border-top: 1px dashed var(--line-soft);
+    padding-top: 10px;
+  }
+
+  .scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; min-width: 560px; }
+  th, td { text-align: left; padding: 12px 16px; vertical-align: top; border-bottom: 1px solid var(--line-soft); }
+  th {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    font-weight: 600;
+    background: var(--surface-2);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.exact { font-family: var(--mono); font-size: 13px; color: var(--ink); }
+
+  .note {
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 16px 20px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .note h3 { font-size: 15px; }
+  .note p { font-size: 14.5px; color: var(--ink-2); }
+
+  footer {
+    border-top: 1px solid var(--line-soft);
+    padding-top: 20px;
+    font-size: 14px;
+    color: var(--ink-3);
+  }
+
+  a { color: var(--signal); }
+  a:focus-visible { outline: 2px solid var(--signal-edge); outline-offset: 2px; }
+
+  @media (max-width: 560px) {
+    .step { grid-template-columns: 1fr; gap: 2px; }
+    .step .label { padding-top: 0; }
+  }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">
+      <span>PR #{N}</span><span>·</span><span>{TICKET-1} / {TICKET-2}</span><span>·</span>
+      <span>{Pilot / scope audience}</span>
+    </div>
+    <h1>{Feature name in product language}</h1>
+    <p class="standfirst">
+      {2–3 sentences: the user problem, what changed, why — plain product language,
+      no code identifiers.}
+    </p>
+  </header>
+
+  <section>
+    <h2>First — what is a “{DOMAIN TERM}”?</h2>
+    <p style="margin-bottom:14px; color:var(--ink-2);">
+      {One sentence defining the term in the reader's world. Include this section whenever the
+      feature needs a concept a tester may not have; delete it when the subject is common
+      knowledge.}
+    </p>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>Example item</th><th>{Property}</th><th>What that means in practice</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>{Real example A}</strong></td><td class="exact">{value}</td>
+            <td>{Plain consequence. Name the term the guide will keep using.}</td></tr>
+          <tr><td><strong>{Real example B}</strong></td><td class="exact">{value}</td>
+            <td>{Plain consequence — the case the feature exists for.}</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin-top:18px; color:var(--ink-2);">
+      <strong style="color:var(--ink);">The problem.</strong> {Walk the before-state through
+      that same example, in the user's world.}
+    </p>
+    <p style="margin-top:12px; color:var(--ink-2);">
+      <strong style="color:var(--ink);">The fix.</strong> {Walk the after-state through the same
+      example.}
+    </p>
+    <div class="note" style="margin-top:18px;">
+      <h3>What this means for testing</h3>
+      <p>{What the tester will and will NOT see on screen. If the feature is largely invisible,
+        say so plainly and name where the real evidence lives — the queue, the created records,
+        the admin tool. Delete this box only if the change is fully visible in the UI.}</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Before you start</h2>
+    <div class="setup">
+      <div>
+        <dt>{Tenant / account}</dt>
+        <dd>{Exactly who this ships to}</dd>
+      </div>
+      <div>
+        <dt>Flag to enable</dt>
+        <dd><code>{exact_flag_name}</code>, {scope of the flag}</dd>
+      </div>
+      <div>
+        <dt>Also required</dt>
+        <dd>{Other setting that must be ON/OFF and why}</dd>
+      </div>
+      <div>
+        <dt>Data needed</dt>
+        <dd>{Shape of test data, with the load-bearing condition in <strong>bold</strong>}</dd>
+      </div>
+      <div>
+        <dt>Viewports</dt>
+        <dd>{e.g. Desktop <em>and</em> mobile — separate implementations}</dd>
+      </div>
+      <div>
+        <dt>Depends on</dt>
+        <dd>{Upstream ticket/feed; note if no new data source}</dd>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>How to actually run this on {ENVIRONMENT}</h2>
+    <div class="note" style="border-color:var(--danger-edge); margin-bottom:16px;">
+      <h3>⚠️ {The environment trap, stated as an instruction}</h3>
+      <p>{Include this section whenever the thing under test is not triggered by ordinary
+        clicking — scheduled tasks, queues, crons, webhooks, batch jobs. Lead with the trap when
+        the natural approach destroys the test rather than merely delaying it.}</p>
+    </div>
+    <div class="steps">
+      <div class="step"><span class="label">Step 1</span><span class="body">{What a developer
+        must run, and what its output should say.}</span></div>
+      <div class="step"><span class="label">Step 2</span><span class="body">{The admin tool and
+        its URL, and what to search for there.}</span></div>
+      <div class="step"><span class="label">Step 3</span><span class="body">{Which values on
+        screen are the evidence.}</span></div>
+      <div class="step"><span class="label">Step 4</span><span class="body">{The exact button
+        that forces it to run now.}</span></div>
+      <div class="step"><span class="label">Step 5</span><span class="body">{Where to go to see
+        the result.}</span></div>
+    </div>
+    <p style="margin-top:16px; color:var(--ink-2); font-size:15px;">
+      {Anything that makes a run non-repeatable — state consumed, alerts/emails that really fire
+      in this environment.}
+    </p>
+  </section>
+
+  <section>
+    <h2>What you're looking for</h2>
+    <p style="margin-bottom:14px; color:var(--ink-2);">
+      {Where on screen, on which rows/states:}
+    </p>
+    <p><span class="ui-demo">{inline mock of the new element, exact strings from code}</span></p>
+    <p style="margin-top:14px; color:var(--ink-2); font-size:15px;">
+      {One short paragraph: visual description, what interacting with it does, and the one
+      scoping rule worth stating up front.}
+    </p>
+  </section>
+
+  <section class="tier tier-0">
+    <div class="tier-head">
+      <span class="pill p0">P0 — Test these first</span>
+      <p>{Plain sentence: what this tier means for the tester, e.g. "If any of these fail, stop
+        and report it."}</p>
+    </div>
+
+    <div class="case">
+      <h3>1. {Plain-language outcome — what must be true, in the user's world}</h3>
+      <p class="plain">{Optional single sentence: why this one matters, as plain consequence —
+        never as review archaeology or code detail.}</p>
+      <div class="qa-need"><strong>You need:</strong> {the test data to set up, with the
+        load-bearing condition in <strong>bold</strong>}</div>
+      <ol class="qa-steps">
+        <li>{One concrete action.}</li>
+        <li>{Next action — note what to <strong>write down</strong> when a later step compares
+          against it.}</li>
+        <li>{Next action.}</li>
+      </ol>
+      <div class="verdict">
+        <div class="pass">✓ <strong>Pass:</strong> {the exact observation, load-bearing word in
+          bold}</div>
+        <div class="fail">✗ <strong>Fail:</strong> {what wrong looks like — and what to do about
+          it if it warrants escalation}</div>
+      </div>
+    </div>
+    <!-- more P0 .case cards, numbering continuing 2, 3, … -->
+  </section>
+
+  <section class="tier tier-1">
+    <div class="tier-head">
+      <span class="pill p1">P1 — Does the feature work properly</span>
+      <p>{The advertised behaviours, including the cases naive testing misses.}</p>
+    </div>
+    <!-- .case cards, numbering continuing from P0; include keyboard/accessibility
+         expectations for new interactive elements -->
+  </section>
+
+  <section>
+    <h2>Where it should and shouldn't appear</h2>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>Surface</th><th>Shows it?</th><th>{Per-surface detail}</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>{Surface}</td><td>Yes</td><td>{detail}</td></tr>
+          <tr><td>{Surface}</td><td>No — deliberately dropped</td><td>—</td></tr>
+          <tr><td>{Surface}</td><td>No — out of scope</td><td>—</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="tier tier-2">
+    <div class="tier-head">
+      <span class="pill p2">P2 — Check nothing else broke</span>
+      <p>{Plain sentence: with the feature off, everything must behave exactly as it does in
+        production today.}</p>
+    </div>
+
+    <div class="case">
+      <h3>{N}. With the feature off, nothing has changed</h3>
+      <div class="qa-need"><strong>You need:</strong> {a tenant/user with the gate OFF — the
+        default}</div>
+      <ol class="qa-steps">
+        <li>{Open the surface and check the values the feature would have changed.}</li>
+        <li>{Exercise the flow end to end.}</li>
+      </ol>
+      <div class="verdict">
+        <div class="pass">✓ <strong>Pass:</strong> {identical to production today — include
+          renames and secondary effects}</div>
+      </div>
+    </div>
+    <!-- one .case per gate, each turned OFF independently; plus shared-component regression -->
+  </section>
+
+  <section>
+    <h2>Known — please don't file these</h2>
+    <div class="note">
+      <h3>{Intentional limitation}</h3>
+      <p>{What it looks like, why it's intentional (sourced from PR/ticket), and that it's
+        <strong>feedback, not a defect</strong>.}</p>
+    </div>
+    <!-- more .note blocks, each with style="margin-top:12px;" -->
+  </section>
+
+  <footer>
+    {The single failure mode worth escalating immediately and exactly what to capture for it.}
+    Guide last checked against branch head <span style="font-family:var(--mono)">{sha}</span>.
+  </footer>
+</div>

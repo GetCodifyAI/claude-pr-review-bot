@@ -95,7 +95,7 @@ echo "==> scripts"
 # onto itself makes `install` fail, and with `set -e` that aborted the run before the systemd
 # and apache steps ever executed — silently skipping the parts you were re-running it for.
 if [ "$SRC" != "$BIN" ]; then
-  install -m 0755 "$SRC"/{pr-watch.sh,run-review.sh,bootstrap.sh} "$BIN/"
+  install -m 0755 "$SRC"/{pr-watch.sh,run-review.sh,run-qa.sh,bootstrap.sh} "$BIN/"
   install -m 0755 "$SRC/prbot-server.py" "$BIN/"
   install -m 0644 "$SRC"/prbot_diff.py "$BIN/"   # imported by the server, must sit beside it
   install -m 0644 "$SRC"/prbot_md.py "$BIN/"
@@ -127,6 +127,8 @@ mkdir -p "$HOME/.claude/skills"
 # project-level copy would not be found — it has to be installed at the user level.
 cp -r "$SRC/../skills/pr-review" "$HOME/.claude/skills/" 2>/dev/null \
   || echo "   !! skills/pr-review not found next to $SRC — reviews will run without it"
+cp -r "$SRC/../skills/pr-qa-guide" "$HOME/.claude/skills/" 2>/dev/null \
+  || echo "   !! skills/pr-qa-guide not found next to $SRC — QA guides will run without it"
 
 # Editable team-default review skill. Seed $ROOT/skills/_global.md on first install so it shows
 # real content and is editable from the dashboard; never overwrite once it exists (it's edited live).

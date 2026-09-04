@@ -705,6 +705,95 @@ def stop_review(pr):
     (d / "status").write_text("stopped")
 
 
+# --- QA guides -------------------------------------------------------------------------------
+# A QA guide is a separate, lighter job than a review: run the pr-qa-guide skill against a PR and
+# park the resulting markdown so it can be rendered and handed to QA. Its state keys are all
+# `qa.*` so a guide and a review can coexist for the same PR without colliding.
+def qa_running(pr):
+    f = STATE / str(pr) / ".qa.lock"
+    if not f.exists():
+        return False
+    try:
+        fd = os.open(f, os.O_RDWR)
+    except OSError:
+        return False
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        return False
+    except OSError:
+        return True
+    finally:
+        os.close(fd)
+
+
+def qa_status_text(pr):
+    try:
+        return (STATE / str(pr) / "qa.status").read_text().strip()
+    except OSError:
+        return ""
+
+
+def load_qa(pr):
+    try:
+        return (STATE / str(pr) / "qa.md").read_text()
+    except OSError:
+        return ""
+
+
+def qa_meta(pr):
+    for name in ("qa_meta.json", "meta.json"):
+        f = STATE / str(pr) / name
+        if f.exists():
+            try:
+                return json.loads(f.read_text())
+            except (OSError, json.JSONDecodeError):
+                pass
+    return {}
+
+
+def qa_state(pr):
+    """'running' | 'failed' | 'stopped' | 'done' | 'none'."""
+    if qa_running(pr):
+        return "running"
+    s = qa_status_text(pr)
+    if s.startswith("failed"):
+        return "failed"
+    if s == "stopped" and not load_qa(pr):
+        return "stopped"
+    return "done" if load_qa(pr) else "none"
+
+
+def qa_list():
+    out = []
+    if STATE.is_dir():
+        for d in STATE.iterdir():
+            if d.is_dir() and d.name.isdigit() and (d / "qa.md").exists():
+                m = qa_meta(d.name)
+                out.append({"num": d.name, "title": m.get("title", f"PR #{d.name}"),
+                            "at": int((d / "qa.md").stat().st_mtime)})
+    return sorted(out, key=lambda x: -x["at"])
+
+
+def stop_qa(pr):
+    d = STATE / str(pr)
+    try:
+        pid = int((d / "qa.pid").read_text().strip())
+        os.killpg(pid, signal.SIGTERM)
+    except (OSError, ValueError):
+        pass
+    (d / "qa.pid").unlink(missing_ok=True)
+    (d / "qa.status").write_text("stopped")
+
+
+def render_qa(md):
+    """Render the QA guide markdown, turning '- [ ]' / '- [x]' items into real checkboxes."""
+    h = prbot_md.render(md)
+    h = re.sub(r"<li>\s*\[[ ]\]\s*", "<li class=task>", h)
+    h = re.sub(r"<li>\s*\[[xX]\]\s*", "<li class='task done'>", h)
+    return h
+
+
 def verify_pat(pat):
     """(login, name, error). Proves the token is real and can see the repo before storing it."""
     r = gh(["api", "user"], token=pat, timeout=20)
@@ -1359,6 +1448,30 @@ color:var(--dim);font-size:.8rem;font-weight:600;cursor:pointer;padding:6px 10px
 @keyframes spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 .foota{display:flex;gap:14px;align-items:center}
+/* QA guide */
+.qagen{display:flex;gap:9px;align-items:stretch;margin-top:4px}.qagen .in{flex:1;min-width:0}
+.qabar{display:flex;align-items:center;gap:10px;margin:14px 0 12px;flex-wrap:wrap}
+.qaguide{font-size:.92rem;line-height:1.62}
+.qaguide h1,.qaguide h2,.qaguide h4{margin:20px 0 8px;font-size:1.12rem;font-weight:700}
+.qaguide>h1:first-child,.qaguide>h2:first-child,.qaguide>h4:first-child{margin-top:0}
+.qaguide h3,.qaguide h5{margin:16px 0 6px;font-size:.98rem;font-weight:650}
+.qaguide p{margin:0 0 10px}.qaguide ul,.qaguide ol{margin:8px 0;padding-left:22px}
+.qaguide li{margin:4px 0}
+.qaguide li.task{list-style:none;position:relative;padding-left:26px}
+.qaguide li.task::before{content:'';position:absolute;left:0;top:2px;width:15px;height:15px;
+border:1.5px solid var(--line2);border-radius:4px}
+.qaguide li.task.done::before{content:'✓';border-color:#3ddc97;color:#3ddc97;font-size:11px;
+font-weight:800;text-align:center;line-height:15px}
+.qaguide code{font-family:var(--mono);font-size:.85em;background:var(--panel2);padding:1px 5px;
+border-radius:4px}
+.qaguide pre{background:#0b0d15;border:1px solid var(--line);border-radius:8px;padding:12px 14px;
+overflow-x:auto;margin:10px 0}.qaguide pre code{background:none;padding:0}
+.qaguide table{border-collapse:collapse;width:100%;margin:10px 0;display:block;overflow-x:auto}
+.qaguide th,.qaguide td{border:1px solid var(--line);padding:7px 11px;text-align:left;
+font-size:.86rem;vertical-align:top}
+.qaguide th{background:var(--panel2);font-weight:650}
+.qaguide a{color:#9db4ff}.qaguide blockquote{border-left:3px solid var(--line2);margin:10px 0;
+padding:2px 0 2px 14px;color:var(--dim)}
 /* guided tour */
 .tourv{position:fixed;inset:0;z-index:60}
 .tourmask{position:absolute;inset:0;background:transparent}
@@ -1414,6 +1527,15 @@ function mdrender(src){
     if(list){html+='</ul>';list=false;}para.push(ln);}
   flush();if(list)html+='</ul>';
   return html||'<p class=muted>Nothing to preview.</p>';
+}
+function copyQA(btn){
+  var t=document.getElementById('qasrc');if(!t)return;
+  var done=btn.dataset.done||'Copied',was=btn.textContent;
+  function ok(){btn.textContent=done;setTimeout(function(){btn.textContent=was;},1600);}
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(t.value).then(ok,function(){t.hidden=false;t.select();
+      document.execCommand('copy');t.hidden=true;ok();});
+  }else{t.hidden=false;t.select();document.execCommand('copy');t.hidden=true;ok();}
 }
 function rqmode(){
   var c=document.getElementById('rqchk'),b=document.getElementById('submit'),
@@ -1553,11 +1675,15 @@ NAV_ICONS = {
     "skills": "<svg viewBox='0 0 24 24' fill=none stroke=currentColor stroke-width=1.8 "
               "stroke-linecap=round stroke-linejoin=round><path d='M16 18l6-6-6-6M8 6l-6 6 6 6'/>"
               "</svg>",
+    "qa": "<svg viewBox='0 0 24 24' fill=none stroke=currentColor stroke-width=1.8 "
+          "stroke-linecap=round stroke-linejoin=round><path d='M9 11l3 3L22 4'/>"
+          "<path d='M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11'/></svg>",
 }
 
 
 def sidebar(user, active):
     items = [("queue", "Queue", "/prbot/"),
+             ("qa", "QA guide", "/prbot/qa"),
              ("learnings", "Learnings", "/prbot/learnings"),
              ("skills", "Skills", "/prbot/skills"),
              ("integrations", "Integrations", "/prbot/integrations"),
@@ -1926,12 +2052,18 @@ class Handler(BaseHTTPRequestHandler):
             return self.learnings_page(user)
         if route == "/skills":
             return self.skills_page(user)
+        if route == "/qa":
+            return self.qa_detail(pr, user) if pr.isdigit() else self.qa_index(user)
         if route == "/":
             tab = (q.get("tab") or ["todo"])[0]
             srt = (q.get("sort") or ["newest"])[0]
             return self.index_page(user, tab if tab in dict(TABS) else "todo", srt)
         if not pr.isdigit():
             return self.reply(400, shell("Bad request", "<h1>Missing PR number.</h1>"))
+        if route == "/qa/gen":
+            if err := verify("qa", pr, exp, sig):
+                return self.deny(err)
+            return self.start_qa(pr, user)
         if route == "/pr":
             return self.detail_page(pr, user, version=(q.get("v") or [""])[0])
         if route in ("/archive", "/unarchive"):
@@ -1975,11 +2107,14 @@ class Handler(BaseHTTPRequestHandler):
         if not pr.isdigit():
             return self.reply(400, shell("Bad request", "<h1>Missing PR number.</h1>"))
         action = {"/post": "post", "/approve": "approve",
-                  "/markdone": "markdone", "/stop": "stop"}.get(route)
+                  "/markdone": "markdone", "/stop": "stop", "/qa/stop": "qastop"}.get(route)
         if not action:
             return self.reply(404, shell("Not found", "<h1>Not found.</h1>"))
         if err := verify(action, pr, exp, sig):
             return self.deny(err)
+        if action == "qastop":
+            stop_qa(pr)
+            return self.redirect(link("qa", pr))
         if action == "stop":
             stop_review(pr)
             return self.redirect(link("pr", pr))
@@ -2747,6 +2882,7 @@ class Handler(BaseHTTPRequestHandler):
                 + f"<span>{html.escape(meta.get('author', ''))}{size}</span>"
                   f"<span>·</span><a href='{ghurl}' target=_blank rel=noopener>open on "
                   f"GitHub</a>"
+                  f"<span>·</span><a href='/prbot/qa?pr={pr}'>QA guide</a>"
                 + ("" if active and user in requested_of(meta)
                    else "<span>· not awaiting your review</span>")
                 + "</div>" + self.timeline(pr, user) + banner)
@@ -3135,6 +3271,116 @@ class Handler(BaseHTTPRequestHandler):
                                         stderr=subprocess.STDOUT, start_new_session=True, env=env)
             (d / "pid").write_text(str(proc.pid))
         return self.redirect(link("pr", pr))
+
+    # --- QA guides ---------------------------------------------------------------------------
+    def start_qa(self, pr, user):
+        d = STATE / pr
+        d.mkdir(parents=True, exist_ok=True)
+        if not qa_running(pr):
+            (d / "qa.status").write_text("queued")
+            env = review_env(user)              # runs on the clicker's Claude account if connected
+            with open(d / "qa.log", "ab") as log:
+                proc = subprocess.Popen([str(BIN / "run-qa.sh"), pr], stdout=log,
+                                        stderr=subprocess.STDOUT, start_new_session=True, env=env)
+            (d / "qa.pid").write_text(str(proc.pid))
+        return self.redirect(f"/prbot/qa?pr={pr}")
+
+    def qa_index(self, user):
+        guides = qa_list()
+        rows = ""
+        for g in guides:
+            rows += (
+                f"<div class=row><a class=rowlink href='/prbot/qa?pr={g['num']}'>"
+                f"<div class=rowtop><span class=num>#{g['num']}</span>"
+                f"<span class=ttl>{html.escape(g['title'])}</span></div>"
+                f"<div class='muted sm rowsub'><span>guide ready · {fmt_date(g['at'])} "
+                f"({ago(g['at'])})</span></div></a>"
+                f"<div class=rowmeta><a class=chev href='/prbot/qa?pr={g['num']}' "
+                f"aria-hidden=true>›</a></div></div>")
+        body = (
+            "<h1>QA guides</h1>"
+            "<p class=lead>Generate a tester-ready QA guide for a PR — risk-tiered manual test "
+            "cases, setup steps, a surface matrix and what <em>not</em> to file — all grounded in "
+            "the real diff. Then hand it straight to QA.</p>"
+            "<div class=card><h4 style='margin-top:0'>Generate a guide</h4>"
+            "<form method=get action='/prbot/qa' class=qagen>"
+            "<input class=in name=pr inputmode=numeric pattern='[0-9]+' autocomplete=off required "
+            "placeholder='PR number — e.g. 38849'>"
+            "<button class='btn primary' type=submit>Open</button></form>"
+            "<div class=hint>Enter a PR number to view its guide or generate a new one.</div>"
+            "</div>"
+            + (f"<h2>Recent guides</h2><div class=list>{rows}</div>" if guides else
+               "<div class=empty><span class=ic>🧪</span><b>No guides yet</b>Enter a PR number "
+               "above to build the first one.</div>"))
+        return self.reply(200, shell("QA guide", body, user=user, active="qa"))
+
+    def qa_detail(self, pr, user):
+        meta = qa_meta(pr)
+        title = meta.get("title", f"PR #{pr}")
+        ghurl = meta.get("url", f"https://github.com/{REPO}/pull/{pr}")
+        st = qa_state(pr)
+        exp_g, sig_g = mint("qa", pr, PAGE_TTL)
+        genlink = f"/prbot/qa/gen?pr={pr}&exp={exp_g}&sig={sig_g}"
+        head = (f"<nav class=bc><a href='/prbot/qa'>QA guides</a><span class=sep>/</span>"
+                f"<span class=cur>#{pr}</span></nav>"
+                f"<h1 class=prtitle>#{pr} — {html.escape(title)}</h1>"
+                f"<div class=meta><a href='{ghurl}' target=_blank rel=noopener>open on GitHub</a>"
+                "</div>")
+
+        if st == "running":
+            s = qa_status_text(pr).lower()
+            phases = ["Fetching the PR", "Checking out the branch", "Building the QA guide"]
+            cur = 0 if "fetch" in s else 1 if ("checking out" in s or "queued" in s) else 2
+            steps = ""
+            for j, ph in enumerate(phases):
+                cls = "done" if j < cur else "now" if j == cur else ""
+                mk = "✓" if j < cur else "<span class='pm spin'></span>" if j == cur else "○"
+                steps += f"<li class='{cls}'><span class=pm>{mk}</span>{ph}</li>"
+            queued = ("<div class=hint>Waiting for another job to finish first — one heavy agent "
+                      "runs at a time.</div>" if "queued" in s else "")
+            exp_s, sig_s = mint("qastop", pr, ACTION_TTL)
+            stop = (f"<form method=post action='/prbot/qa/stop' style='margin:12px 0 0'>"
+                    f"<input type=hidden name=pr value='{pr}'>"
+                    f"<input type=hidden name=exp value='{exp_s}'>"
+                    f"<input type=hidden name=sig value='{sig_s}'>"
+                    "<button class='btn soft' type=submit data-busy='Stopping…'>Stop</button>"
+                    "</form>")
+            panel = (f"<div class='card top'><div class=prog-hd>Building QA guide for <b>#{pr}"
+                     f"</b></div><ul class=prog>{steps}</ul>"
+                     "<div class=progbar><div class=progfill></div></div>"
+                     f"{queued}<div class='hint' style='margin-top:10px'>This page refreshes "
+                     f"itself; reading the diff and review history takes a few minutes.</div>"
+                     f"{stop}</div>")
+            return self.reply(200, shell(f"QA #{pr}", head + panel,
+                                         refresh=f"/prbot/qa?pr={pr}", user=user, active="qa"))
+
+        if st in ("failed", "stopped"):
+            s = qa_status_text(pr)
+            note = ("<div class='banner warn'><span>🛑</span><div><b>Stopped.</b> Generate a new "
+                    "guide below.</div></div>" if st == "stopped" else
+                    f"<div class='banner err'><span>🔴</span><div>{html.escape(s)}</div></div>")
+            gen = (f"<div class='card top'><a class='btn primary' href='{genlink}'>Generate QA "
+                   f"guide</a></div>")
+            return self.reply(200, shell(f"QA #{pr}", head + note + gen, user=user, active="qa"))
+
+        if st == "done":
+            md = load_qa(pr)
+            copy = ("<div class=qabar><span class='muted sm'>Guide ready — hand it to QA.</span>"
+                    "<span class=spacer></span>"
+                    f"<a class='btn soft' href='{genlink}'>Regenerate</a>"
+                    "<button type=button class='btn primary' onclick='copyQA(this)' "
+                    "data-done='Copied ✓'>Copy guide</button></div>")
+            body = (head + copy
+                    + f"<div class=card><div class=qaguide>{render_qa(md)}</div></div>"
+                    + f"<textarea id=qasrc hidden>{html.escape(md)}</textarea>")
+            return self.reply(200, shell(f"QA #{pr}", body, user=user, active="qa"))
+
+        # none yet
+        gen = ("<div class='card top'><h4 style='margin-top:0'>No guide yet</h4>"
+               "<p class='muted sm'>Build a tester-ready QA guide from this PR's diff, review "
+               "threads and history.</p>"
+               f"<a class='btn primary' href='{genlink}'>Generate QA guide</a></div>")
+        return self.reply(200, shell(f"QA #{pr}", head + gen, user=user, active="qa"))
 
     def do_post_comments(self, pr, user, form):
         one = lambda k: (form.get(k) or [""])[0]  # noqa: E731
