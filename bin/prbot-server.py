@@ -1054,6 +1054,31 @@ def clear_session_cookie(host=""):
             "SameSite=Lax")
 
 
+def _is_alias_host(host):
+    """A robin-<env> / prbot-<env> host on our staging domain — the two aliases of this one box."""
+    h = (host or "").split(":")[0]
+    return (h.startswith("robin-") or h.startswith("prbot-")) and h.endswith("." + PRBOT_DOMAIN)
+
+
+def _sibling_host(host):
+    """The other alias of this box (robin- <-> prbot-), or "" when not on an alias host."""
+    h = (host or "").split(":")[0]
+    if not _is_alias_host(h):
+        return ""
+    return ("prbot-" + h[len("robin-"):]) if h.startswith("robin-") else ("robin-" + h[len("prbot-"):])
+
+
+def _accept_url_ok(url):
+    """A handoff token may only be handed to our own alias hosts' accept endpoint — never an
+    arbitrary URL (that would leak the token)."""
+    try:
+        u = urlparse(url)
+    except ValueError:
+        return False
+    return (u.scheme == "https" and _is_alias_host(u.netloc)
+            and u.path.rstrip("/") == "/prbot/handoff/accept")
+
+
 def session_user(headers):
     """The signed-in login, or None. A user removed from users.json is signed out at once."""
     jar = SimpleCookie(headers.get("Cookie", ""))
@@ -1636,6 +1661,35 @@ class Handler(BaseHTTPRequestHandler):
                                         q.get("error") or [""])[0])
         # Everything else is a client-routed SPA page \u2192 serve the shell. React calls
         # /api/me and shows the login screen when there is no session.
+        # --- cross-host SSO: carry an existing session between the robin-/prbot- aliases -------
+        if route == "/handoff":
+            # This host may already hold a session (e.g. prbot-). If authed, mint a short handoff
+            # token and bounce to the sibling's accept endpoint; else bounce back so it shows login.
+            nxt = (q.get("next") or [""])[0]
+            if not _accept_url_ok(nxt):
+                return self.redirect("/prbot/login")
+            user = session_user(self.headers)
+            if user:
+                exp = int(time.time()) + 120
+                sig = sign("handoff", user, exp)
+                sep = "&" if "?" in nxt else "?"
+                return self.redirect(f"{nxt}{sep}login={quote(user)}&exp={exp}&sig={sig}")
+            return self.redirect(nxt)
+        if route == "/handoff/accept":
+            hlogin = (q.get("login") or [""])[0]
+            hexp = (q.get("exp") or [""])[0]
+            hsig = (q.get("sig") or [""])[0]
+            ok = (hlogin and hexp.isdigit() and hlogin in load_users() and int(hexp) > time.time()
+                  and hmac.compare_digest(sign("handoff", hlogin, int(hexp)), hsig))
+            if ok:
+                return self.redirect("/prbot/",
+                                     cookie=session_cookie(hlogin, self.headers.get("Host", "")))
+            return self.redirect("/prbot/?sso=1")
+        host = self.headers.get("Host", "")
+        sib = _sibling_host(host)
+        if sib and not q.get("sso") and route != "/login" and not session_user(self.headers):
+            accept = f"https://{host}/prbot/handoff/accept"
+            return self.redirect(f"https://{sib}/prbot/handoff?next=" + quote(accept, safe=""))
         return self.reply(200, index_html())
 
     # -- POST --------------------------------------------------------------------------------
