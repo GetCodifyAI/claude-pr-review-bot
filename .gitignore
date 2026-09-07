@@ -9,3 +9,7 @@ used-nonces
 *.log
 __pycache__/
 .DS_Store
+bin/static/
+dashboard-ui/node_modules/
+dashboard-ui/test-results/
+dashboard-ui/playwright-report/

@@ -1926,6 +1926,30 @@ def shell(title, body, refresh=None, user=None, active=None, auth=False):
     return head + inner + f"<script>{JS}</script></body></html>"
 
 
+# --- SPA shell (React frontend) --------------------------------------------------------------
+# During the migration this is gated behind PRBOT_SPA=1 so `main` stays safe to deploy: with the
+# flag off (the box default) the server keeps rendering the HTML pages below; with it on it serves
+# the React bundle for every app route and the browser does client-side routing.
+SPA = (os.environ.get("PRBOT_SPA") or ENV.get("PRBOT_SPA", "")) == "1"
+STATIC_DIR = BIN / "static"
+
+
+def index_html():
+    """The minimal HTML shell the React SPA mounts into (bundle built to bin/static/app.*)."""
+    return (
+        "<!doctype html><html lang=en><head><meta charset=utf-8>"
+        "<meta name=viewport content='width=device-width,initial-scale=1'>"
+        f"<title>{html.escape(BRAND)}</title>"
+        f"<link rel=icon href='{prbot_assets.FAVICON}'>"
+        "<link rel=preconnect href='https://fonts.googleapis.com'>"
+        "<link rel=preconnect href='https://fonts.gstatic.com' crossorigin>"
+        "<link rel=stylesheet href='https://fonts.googleapis.com/css2?"
+        "family=Inter:wght@400;500;600;700&display=swap'>"
+        "<link rel=stylesheet href='/prbot/static/app.css'>"
+        "</head><body><div id=root></div>"
+        "<script src='/prbot/static/app.js'></script></body></html>")
+
+
 def pill(kind, text=None):
     return f"<span class='pill {kind}'>{html.escape(text or kind)}</span>"
 
@@ -2304,7 +2328,13 @@ class Handler(BaseHTTPRequestHandler):
 
         if route == "/health":
             return self.reply(200, "ok", "text/plain; charset=utf-8")
+        if route.startswith("/static/"):
+            return self.serve_static(route)
+        if route.startswith("/api/"):
+            return self.api_get(route, q)
         if route == "/login":
+            if SPA:
+                return self.reply(200, index_html())
             return self.login_page((q.get("next") or ["/prbot/"])[0])
         if route == "/logout":
             return self.redirect("/prbot/login", cookie=clear_session_cookie())
@@ -2321,6 +2351,11 @@ class Handler(BaseHTTPRequestHandler):
                                        (q.get("state") or [""])[0],
                                        (q.get("error_description") or
                                         q.get("error") or [""])[0])
+
+        # With the SPA flag on, every remaining route is a client-routed page → serve the shell
+        # (the React app calls /api/me and shows login if there's no session).
+        if SPA:
+            return self.reply(200, index_html())
 
         user = session_user(self.headers)
         if not user:
@@ -2374,10 +2409,140 @@ class Handler(BaseHTTPRequestHandler):
         return self.reply(404, shell("Not found", "<h1>Not found.</h1>"))
 
     # -- POST --------------------------------------------------------------------------------
+    # --- JSON API + static (React frontend) -------------------------------------------------
+    def api_json(self, obj, status=200, cookie=None):
+        return self.reply(status, json.dumps(obj), "application/json; charset=utf-8", cookie)
+
+    def serve_static(self, route):
+        name = route[len("/static/"):]
+        ctype = ("application/javascript; charset=utf-8" if name.endswith(".js")
+                 else "text/css; charset=utf-8" if name.endswith(".css")
+                 else "application/octet-stream")
+        f = STATIC_DIR / name
+        # basic traversal guard + must sit under STATIC_DIR
+        if ".." in name or not f.is_file() or STATIC_DIR not in f.resolve().parents:
+            return self.reply(404, "not found", "text/plain; charset=utf-8")
+        try:
+            return self.reply(200, f.read_text(), ctype)
+        except OSError:
+            return self.reply(404, "not found", "text/plain; charset=utf-8")
+
+    def api_get(self, route, q):
+        user = session_user(self.headers)
+        if route == "/api/me":
+            return self.api_json(self.api_me(user))
+        if not user:
+            return self.api_json({"error": "unauthorized"}, 401)
+        if route == "/api/queue":
+            return self.api_json(self.api_queue(user, (q.get("tab") or ["todo"])[0],
+                                                (q.get("sort") or ["newest"])[0]))
+        return self.api_json({"error": "not found"}, 404)
+
+    def api_me(self, user):
+        if not user:
+            return {"authed": False, "brand": BRAND, "repo": REPO, "dry_run": DRY_RUN,
+                    "oauth": OAUTH_ENABLED}
+        u = load_users().get(user) or {}
+        choice, skill_label = effective_skill(user)
+        return {"authed": True, "login": user, "name": u.get("name") or user,
+                "slack_id": u.get("slack_id", ""), "claude_connected": claude_connected(user),
+                "active_skill": choice, "skill_label": skill_label, "dry_run": DRY_RUN,
+                "repo": REPO, "brand": BRAND, "oauth": OAUTH_ENABLED}
+
+    def api_queue(self, user, tab, sort):
+        if tab not in dict(TABS):
+            tab = "todo"
+        entries = []
+        for item, active in all_prs(user):
+            num = str(item.get("number"))
+            st = pr_state(num, user)
+            rev = load_review(num)
+            cs = sev_counts(rev.get("comments", [])) if rev else {}
+            t = pr_times(num, user)
+            upd = iso_ts(item.get("updatedAt")) or iso_ts(item.get("createdAt"))
+            entries.append({"num": num, "item": item, "active": active, "st": st, "t": t,
+                            "cs": cs, "updated": upd,
+                            "touched": max(t["approved"], t["posted"], t["reviewed"], upd),
+                            "blockers": cs.get("blocker", 0), "total": sum(cs.values())})
+        counts = {k: 0 for k, _ in TABS}
+        for e in entries:
+            counts[tab_of(e["st"])] += 1
+            counts["all"] += 1
+        shown = [e for e in entries
+                 if tab_of(e["st"]) == tab or (tab == "all" and e["st"] != "archived")]
+        keys = {"newest": lambda e: -(e["updated"] or int(e["num"])),
+                "oldest": lambda e: (e["updated"] or int(e["num"])),
+                "activity": lambda e: -e["touched"],
+                "findings": lambda e: (-e["blockers"], -e["total"])}
+        shown.sort(key=keys.get(sort, keys["newest"]))
+        rows = []
+        for e in shown:
+            item, t, num = e["item"], e["t"], e["num"]
+            when = []
+            if t["approved"]:
+                when.append(f"approved {fmt_date(t['approved'])}")
+            elif t["posted"]:
+                when.append(f"posted {fmt_date(t['posted'])}")
+            elif t["reviewed"]:
+                when.append(f"reviewed {ago(t['reviewed'])}")
+            if e["updated"]:
+                when.append(f"PR updated {fmt_date(e['updated'])}")
+            if not e["active"]:
+                when.append("no longer requested")
+            size = (f"+{item.get('additions', 0):,} −{item.get('deletions', 0):,} · "
+                    f"{item['changedFiles']} files") if item.get("changedFiles") else ""
+            sev = [{"kind": k, "n": n, "label": SEV_LABEL.get(k, k)}
+                   for k, n in sorted(e["cs"].items(), key=lambda kv: SEV_ORDER.get(kv[0], 9))]
+            archived = e["st"] == "archived"
+            aexp, asig = mint("unarchive" if archived else "archive", num, ACTION_TTL)
+            rows.append({"num": num, "title": item.get("title", ""),
+                         "author": item.get("author", ""), "state": e["st"], "size": size,
+                         "when": when, "sev": sev, "archived": archived,
+                         "archiveToken": {"exp": aexp, "sig": asig}})
+        return {"tab": tab, "sort": sort,
+                "tabs": [{"key": k, "label": lbl, "count": counts[k]} for k, lbl in TABS],
+                "stats": {k: counts[k] for k in ("todo", "reviewed", "posted", "approved")},
+                "tabDesc": TAB_DESC.get(tab, ""),
+                "rows": rows,
+                "slackOk": bool((load_users().get(user) or {}).get("slack_id"))}
+
+    def api_post(self, route, body):
+        if route == "/api/login":
+            pat = (body.get("pat") or "").strip()
+            if not pat:
+                return self.api_json({"error": "Paste a token."}, 400)
+            login, name, err = verify_pat(pat)
+            if err:
+                return self.api_json({"error": err}, 400)
+
+            def apply(users):
+                prev = users.get(login) or {}
+                u = dict(prev)
+                u.update({"pat_enc": enc(pat), "name": name,
+                          "added": prev.get("added") or int(time.time()),
+                          "updated": int(time.time())})
+                users[login] = u
+            modify_users(apply)
+            print(f"login (api): {login}", flush=True)
+            return self.api_json({"ok": True, "login": login}, cookie=session_cookie(login))
+        user = session_user(self.headers)
+        if not user:
+            return self.api_json({"error": "unauthorized"}, 401)
+        if route == "/api/logout":
+            return self.api_json({"ok": True}, cookie=clear_session_cookie())
+        return self.api_json({"error": "not found"}, 404)
+
     def do_POST(self):
         n = int(self.headers.get("Content-Length") or 0)
-        form = parse_qs(self.rfile.read(n).decode(), keep_blank_values=True)
+        raw = self.rfile.read(n)
         route = urlparse(self.path).path.rstrip("/").removeprefix("/prbot")
+        if route.startswith("/api/"):
+            try:
+                body = json.loads(raw or b"{}")
+            except json.JSONDecodeError:
+                body = {}
+            return self.api_post(route, body if isinstance(body, dict) else {})
+        form = parse_qs(raw.decode(), keep_blank_values=True)
         one = lambda k: (form.get(k) or [""])[0]  # noqa: E731
         if route == "/login":
             return self.do_login(form)

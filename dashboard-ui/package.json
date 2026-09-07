@@ -1,0 +1,30 @@
+{
+  "name": "robin-dashboard-ui",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/main.tsx --bundle --minify --jsx=automatic --outdir=../bin/static --entry-names=app --loader:.png=dataurl",
+    "dev": "esbuild src/main.tsx --bundle --sourcemap --jsx=automatic --outdir=../bin/static --entry-names=app --loader:.png=dataurl --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test src/*.test.ts",
+    "test:browser": "playwright test"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  },
+  "dependencies": {
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "esbuild": "0.25.8",
+    "tsx": "^4.23.0",
+    "typescript": "^5.9.3"
+  }
+}
