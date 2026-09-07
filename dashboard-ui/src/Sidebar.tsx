@@ -79,6 +79,7 @@ export function Sidebar({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
   return (
     <aside className="side">
       <Link className="brand" to="/">
+        {me.logo && <img src={me.logo} alt="" />}
         <span className="n">{me.brand}</span>
       </Link>
 

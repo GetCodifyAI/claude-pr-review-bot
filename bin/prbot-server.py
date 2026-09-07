@@ -1836,13 +1836,13 @@ class Handler(BaseHTTPRequestHandler):
     def api_me(self, user):
         if not user:
             return {"authed": False, "brand": BRAND, "repo": REPO, "dry_run": DRY_RUN,
-                    "oauth": OAUTH_ENABLED}
+                    "oauth": OAUTH_ENABLED, "logo": prbot_assets.LOGO}
         u = load_users().get(user) or {}
         choice, skill_label = effective_skill(user)
         return {"authed": True, "login": user, "name": u.get("name") or user,
                 "slack_id": u.get("slack_id", ""), "claude_connected": claude_connected(user),
                 "active_skill": choice, "skill_label": skill_label, "dry_run": DRY_RUN,
-                "repo": REPO, "brand": BRAND, "oauth": OAUTH_ENABLED}
+                "repo": REPO, "brand": BRAND, "oauth": OAUTH_ENABLED, "logo": prbot_assets.LOGO}
 
     def api_queue(self, user, tab, sort):
         if tab not in dict(TABS):

@@ -90,7 +90,7 @@ function RunForm({
   onStarted: () => void;
 }) {
   const [effort, setEffort] = useState(form.suggested);
-  const [model, setModel] = useState("");
+  const [model, setModel] = useState(form.suggested === "deep" ? "opus" : "");
   const [focus, setFocus] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");

@@ -34,6 +34,7 @@ export function Login({ me, onDone }: { me: Me; onDone: () => void }) {
   return (
     <div className="auth">
       <div className="authcard">
+        {me.logo && <img className="authlogo" src={me.logo} alt="" />}
         <h1>{me.brand}</h1>
         <p className="authsub">Your PR reviewer for Cut&amp;Dry</p>
         <p className="authlead">

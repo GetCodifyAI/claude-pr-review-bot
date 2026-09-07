@@ -40,6 +40,7 @@ export interface Me {
   repo: string;
   brand: string;
   oauth: boolean;
+  logo?: string;
 }
 
 export interface Token {
