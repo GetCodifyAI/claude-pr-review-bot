@@ -1927,10 +1927,10 @@ def shell(title, body, refresh=None, user=None, active=None, auth=False):
 
 
 # --- SPA shell (React frontend) --------------------------------------------------------------
-# During the migration this is gated behind PRBOT_SPA=1 so `main` stays safe to deploy: with the
-# flag off (the box default) the server keeps rendering the HTML pages below; with it on it serves
-# the React bundle for every app route and the browser does client-side routing.
-SPA = (os.environ.get("PRBOT_SPA") or ENV.get("PRBOT_SPA", "")) == "1"
+# The React SPA is the default UI: the server serves the bundle for every app route and the
+# browser does client-side routing. The legacy HTML renderers below stay as a runtime kill
+# switch — set PRBOT_SPA=0 (env or .env) to fall back to them without a redeploy.
+SPA = (os.environ.get("PRBOT_SPA") or ENV.get("PRBOT_SPA", "1")) != "0"
 STATIC_DIR = BIN / "static"
 
 

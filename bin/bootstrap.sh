@@ -107,6 +107,35 @@ else
   echo "   (running from $BIN — nothing to copy)"
 fi
 
+echo "==> node + pnpm"
+# The dashboard UI is a React + TypeScript app bundled by esbuild. The box builds it from
+# source at deploy time (no build artifacts are committed). esbuild is low-memory, so a
+# t4g.small handles it fine. Node LTS ships corepack, but we install pnpm via npm since the
+# repo pins no packageManager field.
+if ! command -v node >/dev/null 2>&1    || [ "$(node -v 2>/dev/null | sed 's/^v//;s/\..*//')" -lt 18 ]; then
+  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+  sudo apt-get install -y nodejs
+  echo "   installed node $(node -v)"
+fi
+if ! command -v pnpm >/dev/null 2>&1; then
+  sudo npm install -g pnpm
+  echo "   installed pnpm $(pnpm -v)"
+fi
+
+echo "==> dashboard-ui build"
+# esbuild writes app.js/app.css to ../bin/static (i.e. $SRC/static). The server reads its
+# bundle from $BIN/static, so copy the freshly built files across after the build.
+UI="$SRC/../dashboard-ui"
+if [ -d "$UI" ]; then
+  ( cd "$UI" && pnpm install --frozen-lockfile && pnpm build )
+  mkdir -p "$BIN/static"
+  install -m 0644 "$SRC/static/"* "$BIN/static/"
+  echo "   built SPA bundle -> $BIN/static ($(ls -1 "$BIN/static" | tr '\n' ' '))"
+else
+  echo "   !! dashboard-ui not found at $UI — the SPA will not load (set PRBOT_SPA=0 to fall"
+  echo "      back to the legacy HTML UI); build it and re-run bootstrap"
+fi
+
 echo "==> base clone"
 # shellcheck disable=SC1090
 set -a; . "$ROOT/.env"; set +a
