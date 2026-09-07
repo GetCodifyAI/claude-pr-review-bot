@@ -531,14 +531,24 @@ function RerunSection({ data, onDone }: { data: PrData; onDone: () => void }) {
 }
 
 function usageChip(u: NonNullable<PrData["usage"]>): string {
+  return `${u.model.replace(/^claude-/, "")} · ${u.realTokens.toLocaleString()} tokens`;
+}
+
+// Details on hover: the real breakdown, plus the API-list-price estimate clearly marked as NOT
+// what a Claude subscription is billed (it isn't per-token).
+function usageTitle(u: NonNullable<PrData["usage"]>): string {
+  const cache = u.cacheReadTokens + u.cacheCreationTokens;
   const cost =
     u.costUsd > 0
-      ? ` · $${u.costUsd.toLocaleString(undefined, {
+      ? ` · ≈ $${u.costUsd.toLocaleString(undefined, {
           minimumFractionDigits: 2,
           maximumFractionDigits: 2,
-        })}`
+        })} at API list prices (not billed on your Claude subscription)`
       : "";
-  return `${u.model.replace(/^claude-/, "")} · ${u.totalTokens.toLocaleString()} tokens${cost}`;
+  return (
+    `${u.inputTokens.toLocaleString()} input · ${u.outputTokens.toLocaleString()} output · ` +
+    `${cache.toLocaleString()} cached context re-reads${cost}`
+  );
 }
 
 function HeaderTop({ data }: { data: PrData }) {
@@ -584,7 +594,11 @@ function PrSidebar({ data }: { data: PrData }) {
             </span>
           )}
         </div>
-        {data.usage && <div className="sideusage">{usageChip(data.usage)}</div>}
+        {data.usage && (
+          <div className="sideusage" title={usageTitle(data.usage)}>
+            {usageChip(data.usage)}
+          </div>
+        )}
         {(data.author || data.size) && (
           <div className="sidemeta">
             {data.author}

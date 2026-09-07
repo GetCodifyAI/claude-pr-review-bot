@@ -134,7 +134,9 @@ export interface Usage {
   model: string;
   inputTokens: number;
   outputTokens: number;
-  totalTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  realTokens: number;
   costUsd: number;
 }
 

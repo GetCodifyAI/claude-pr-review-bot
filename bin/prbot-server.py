@@ -775,12 +775,20 @@ def review_usage(pr):
         u = json.loads(f.read_text())
     except (OSError, json.JSONDecodeError):
         return None
-    inp = int(u.get("input_tokens") or 0) + int(u.get("cache_read_input_tokens") or 0) \
-        + int(u.get("cache_creation_input_tokens") or 0)
+    fresh_in = int(u.get("input_tokens") or 0)
+    out = int(u.get("output_tokens") or 0)
+    cache_read = int(u.get("cache_read_input_tokens") or 0)
+    cache_create = int(u.get("cache_creation_input_tokens") or 0)
+    # "real" = fresh input + output. Cache reads (the same context re-sent each agent turn) are
+    # reported separately — they dominate the raw total but aren't fresh work, so we don't headline
+    # them. costUsd is Claude's pay-per-token API-list-price estimate, NOT what a subscription is
+    # billed; the UI shows it only in the tooltip, clearly labelled.
     return {"model": u.get("model") or "unknown",
-            "inputTokens": inp,
-            "outputTokens": int(u.get("output_tokens") or 0),
-            "totalTokens": inp + int(u.get("output_tokens") or 0),
+            "inputTokens": fresh_in,
+            "outputTokens": out,
+            "cacheReadTokens": cache_read,
+            "cacheCreationTokens": cache_create,
+            "realTokens": fresh_in + out,
             "costUsd": float(u.get("cost_usd") or 0)}
 
 
