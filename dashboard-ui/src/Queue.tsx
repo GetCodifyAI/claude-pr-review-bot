@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, type Me, type QueueData, type QueueRow } from "./api";
-import { Link, useLocation } from "./router";
+import { prnum } from "./pr";
+import { Link, navigate, useLocation } from "./router";
 
 const SORTS: [string, string][] = [
   ["newest", "Newest"],
@@ -60,6 +61,7 @@ export function Queue({ me }: { me: Me }) {
   const sort = search.get("sort") || "newest";
   const [data, setData] = useState<QueueData | null>(null);
   const [q, setQ] = useState("");
+  const [rv, setRv] = useState("");
 
   useEffect(() => {
     let live = true;
@@ -88,6 +90,28 @@ export function Queue({ me }: { me: Me }) {
         Reviews requested from you across <code>{me.repo}</code>. Nothing reaches GitHub without
         your click.
       </p>
+
+      <form
+        className="reviewany"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const n = prnum(rv);
+          if (n) navigate(`/pr?pr=${n}`);
+        }}
+      >
+        <span className="ra-ico">✨</span>
+        <input
+          className="in"
+          type="text"
+          autoComplete="off"
+          placeholder="Review any PR — paste a number or GitHub URL…"
+          value={rv}
+          onChange={(e) => setRv(e.target.value)}
+        />
+        <button className="btn primary" type="submit" disabled={!prnum(rv)}>
+          Review
+        </button>
+      </form>
       {!data.slackOk && (
         <div className="banner warn">
           <span>💬</span>

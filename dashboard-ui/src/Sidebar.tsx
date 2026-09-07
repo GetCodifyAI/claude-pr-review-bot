@@ -104,8 +104,7 @@ export function Sidebar({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
       </nav>
 
       <div className="sidefoot">
-        <span className={"live " + (me.dry_run ? "dry" : "on")}>{me.dry_run ? "dry run" : "live"}</span>
-        <div className="who">
+        <div className="acct">
           <span className="av">{(me.login || "?").slice(0, 1).toUpperCase()}</span>
           <div className="whot">
             <span className="nm">{me.login}</span>
@@ -113,9 +112,16 @@ export function Sidebar({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
               ⚙ {skill}
             </Link>
           </div>
+          <span
+            className={"statuspill " + (me.dry_run ? "dry" : "on")}
+            title={me.dry_run ? "Dry run — nothing posts to GitHub" : "Live"}
+          >
+            {me.dry_run ? "Dry" : "Live"}
+          </span>
         </div>
         <div className="foota">
           <HelpMenu />
+          <span className="spacer" />
           <button className="so" type="button" onClick={onSignOut}>
             Sign out
           </button>

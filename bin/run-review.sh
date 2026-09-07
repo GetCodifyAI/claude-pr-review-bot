@@ -119,6 +119,14 @@ FOCUSBLOCK=""
 The reviewer specifically asked you to focus on the following — prioritise it alongside the skill,
 and if it turns out not to apply, say so briefly in the analysis:
 $FOCUS"
+
+# Stack context (PRBOT_STACK): when this PR is part of a stack, the diff shows only its own
+# changes, so tell the agent the sibling PRs exist to avoid false "undefined/missing" findings.
+STACK="${PRBOT_STACK:-}"
+STACKBLOCK=""
+[ -n "$STACK" ] && STACKBLOCK="
+
+$STACK"
 # The output contract — spelled out here so ANY skill (custom or global) yields the exact
 # review.json the dashboard needs, independent of whether the skill itself defines the format.
 CONTRACT="Do NOT print a table and do NOT post anything to GitHub. Write your findings to
@@ -148,13 +156,13 @@ if [ -n "$APPROACH" ]; then
 
 $APPROACH
 $DEPTH
-$FOCUSBLOCK
+$FOCUSBLOCK$STACKBLOCK
 
 $CONTRACT"
 else
   PROMPT="Use the pr-review skill to review PR #$PR of $REPO. Follow its Step 7 automation mode.
 $DEPTH
-$FOCUSBLOCK
+$FOCUSBLOCK$STACKBLOCK
 ${CONTRACT}"
 fi
 

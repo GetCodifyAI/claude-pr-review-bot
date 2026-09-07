@@ -1274,11 +1274,33 @@ def queue():
     return []
 
 
-def pr_meta(pr):
-    """Identity for a PR, from the live queue if still there, else the cached copy.
+def fetch_pr_meta(pr):
+    """Fetch a PR's identity from GitHub for one that isn't in the local queue (e.g. opened by
+    number/URL from the command palette). Normalized to the queue.json shape and cached to
+    meta.json so the detail header shows the real title/author/size, not just the number."""
+    d = gh_json(["pr", "view", str(pr), "--repo", REPO, "--json",
+                 "number,title,url,additions,deletions,changedFiles,author,isDraft,"
+                 "headRefOid,createdAt,updatedAt"], default=None)
+    if not isinstance(d, dict) or not d.get("number"):
+        return None
+    m = {"number": d["number"], "title": d.get("title", ""), "url": d.get("url", ""),
+         "additions": d.get("additions", 0), "deletions": d.get("deletions", 0),
+         "changedFiles": d.get("changedFiles", 0),
+         "author": (d.get("author") or {}).get("login", ""),
+         "isDraft": d.get("isDraft", False), "head": d.get("headRefOid", ""),
+         "createdAt": d.get("createdAt"), "updatedAt": d.get("updatedAt")}
+    try:
+        f = STATE / str(pr) / "meta.json"
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps(m))
+    except OSError:
+        pass
+    return m
 
-    A PR leaves queue.json the moment you submit a review or the request moves on — but its
-    review is still on disk and still worth reading, so fall back to meta.json.
+
+def pr_meta(pr):
+    """Identity for a PR, from the live queue if still there, else the cached copy, else fetched
+    live from GitHub for a PR opened by number that was never in this user's queue.
     """
     for item in queue():
         if str(item.get("number")) == str(pr):
@@ -1289,6 +1311,9 @@ def pr_meta(pr):
             return json.loads(f.read_text()), False
         except json.JSONDecodeError:
             pass
+    fetched = fetch_pr_meta(pr)
+    if fetched:
+        return fetched, False
     return {"number": pr, "title": f"PR #{pr}"}, False
 
 
@@ -2255,6 +2280,24 @@ class Handler(BaseHTTPRequestHandler):
         env["PRBOT_FOCUS"] = focus
         env["PRBOT_MODEL"] = mdl
         env["PRBOT_SKILL_CHOICE"] = choice
+        # Stack context: if this PR is stacked on other open PRs, its diff is only its own changes.
+        # Tell the agent the siblings exist so it doesn't flag setup a lower PR provides.
+        try:
+            stack = pr_stack(pr)
+        except Exception:
+            stack = []
+        if len(stack) > 1:
+            rows = "\n".join(
+                f"  #{it.get('number')} \u2014 {it.get('title', '')}"
+                + ("  \u2190 this PR" if str(it.get("number")) == pr else "")
+                for it in stack)
+            env["PRBOT_STACK"] = (
+                f"This PR is part of a stack of {len(stack)} open PRs (each based on the one "
+                "above). The diff you see is ONLY this PR's own changes \u2014 assume the changes "
+                "from the other PRs in the stack are already present. Do not flag missing "
+                "definitions, imports, migrations or setup that another PR in the stack provides; "
+                "do consider cross-PR dependencies and whether this PR is coherent on top of the "
+                "ones below it.\nStack (top \u2192 bottom):\n" + rows)
         with open(d / "run.log", "ab") as log:
             proc = subprocess.Popen([str(BIN / "run-review.sh"), pr], stdout=log,
                                     stderr=subprocess.STDOUT, start_new_session=True, env=env)
