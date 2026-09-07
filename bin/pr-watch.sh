@@ -59,9 +59,19 @@ echo "$tagged" | jq -s 'group_by(.number) | map(.[0] + {requested: (map(.request
 # dashboard. Only genuinely-new requests after this point ping and land in "To review".
 KNOWN="$ROOT/known_logins"
 if [ ! -f "$KNOWN" ]; then
-  # First run of this logic on an existing box: treat everyone already signed in as onboarded,
-  # so upgrading never archives a current user's live queue.
-  printf '%s\n' $logins > "$KNOWN"
+  # First run of this logic on an existing box (or after a rebuild that lost known_logins):
+  # onboard everyone already signed in. Seed each one's WHOLE current backlog as already-seen
+  # (no Slack) so the upgrade never blasts their existing review-request queue — but do NOT
+  # archive it, so their live "To review" queue stays intact (unlike a brand-new sign-in).
+  # Without this seeding, every existing user's entire backlog re-pings on the next poll.
+  for login in $logins; do
+    for num in $(jq -r --arg u "$login" \
+                   '.[] | select(.requested | index($u)) | .number' "$ROOT/queue.json"); do
+      grep -qxF "$num:$login" "$SEEN" || echo "$num:$login" >> "$SEEN"
+    done
+    echo "$login" >> "$KNOWN"
+  done
+  echo "==> first run: seeded existing users' backlogs as seen (no Slack, no archive)"
 fi
 for login in $logins; do
   grep -qxF "$login" "$KNOWN" && continue
