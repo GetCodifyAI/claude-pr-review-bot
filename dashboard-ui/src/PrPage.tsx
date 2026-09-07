@@ -527,6 +527,29 @@ function Header({ data }: { data: PrData }) {
             {data.effortBadge.label} review
           </span>
         )}
+        {data.usage && (
+          <span
+            className="usage"
+            title={
+              `${data.usage.inputTokens.toLocaleString()} input · ` +
+              `${data.usage.outputTokens.toLocaleString()} output tokens` +
+              (data.usage.costUsd > 0
+                ? ` · $${data.usage.costUsd.toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}`
+                : "")
+            }
+          >
+            {data.usage.model.replace(/^claude-/, "")} · {data.usage.totalTokens.toLocaleString()} tokens
+            {data.usage.costUsd > 0
+              ? ` · $${data.usage.costUsd.toLocaleString(undefined, {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}`
+              : ""}
+          </span>
+        )}
         <span>
           {data.author}
           {data.size ? ` · ${data.size}` : ""}

@@ -129,6 +129,14 @@ export interface HistoryRun {
   event: string;
 }
 
+export interface Usage {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  costUsd: number;
+}
+
 export interface PrData {
   historyView?: boolean;
   ts?: number;
@@ -143,6 +151,7 @@ export interface PrData {
   awaiting: boolean;
   runner: string;
   effortBadge: { label: string; hint: string } | null;
+  usage?: Usage | null;
   focus: string;
   stale: boolean;
   risk: Risk[];

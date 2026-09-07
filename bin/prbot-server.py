@@ -718,6 +718,25 @@ def review_effort(pr):
         return ""
 
 
+def review_usage(pr):
+    """Token usage + model recorded for the last review, or None. Written by run-review.sh from
+    Claude's stream-json output; best-effort, so a missing/garbled file just means no usage line."""
+    f = STATE / str(pr) / "usage.json"
+    if not f.exists():
+        return None
+    try:
+        u = json.loads(f.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    inp = int(u.get("input_tokens") or 0) + int(u.get("cache_read_input_tokens") or 0) \
+        + int(u.get("cache_creation_input_tokens") or 0)
+    return {"model": u.get("model") or "unknown",
+            "inputTokens": inp,
+            "outputTokens": int(u.get("output_tokens") or 0),
+            "totalTokens": inp + int(u.get("output_tokens") or 0),
+            "costUsd": float(u.get("cost_usd") or 0)}
+
+
 def review_risk(pr):
     """Domain-risk flags recorded by run-review.sh (pricing / catalog / dp), as a list."""
     try:
@@ -2508,6 +2527,7 @@ class Handler(BaseHTTPRequestHandler):
             "runner": runner,
             "effortBadge": ({"label": EFFORT[eff][0], "hint": EFFORT[eff][2]}
                             if eff and st not in ("reviewing", "queued") else None),
+            "usage": (review_usage(pr) if st not in ("reviewing", "queued") else None),
             "focus": foc,
             "stale": stale,
             "risk": [{"icon": RISK_INFO[f][0], "title": RISK_INFO[f][1], "note": RISK_INFO[f][2]}

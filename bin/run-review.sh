@@ -155,12 +155,32 @@ ${CONTRACT}"
 fi
 
 (cd "$wt" && timeout "$TIMEOUT" claude -p "$PROMPT" \
+  --output-format stream-json --verbose \
   --allowedTools "Bash Read Glob Grep Write" < /dev/null) >"$DIR/agent.log" 2>&1
 
 [ -s "$wt/review.json" ] || fail "agent produced no review.json (see $DIR/agent.log)"
 jq -e . "$wt/review.json" >/dev/null 2>&1 || fail "review.json is not valid JSON"
 # Copy out before the worktree is removed — this is the artefact the dashboard renders.
 cp "$wt/review.json" "$DIR/review.json"
+
+# Token usage + model, parsed from the stream-json log. Best-effort: if anything is missing or
+# unparseable we simply write no usage.json and the dashboard omits the usage line.
+usage_line=$(grep -a '"type":"result"' "$DIR/agent.log" | tail -1 || true)
+init_line=$(grep -a '"subtype":"init"' "$DIR/agent.log" | head -1 || true)
+if [ -n "$usage_line" ]; then
+  model=$(printf '%s' "$init_line" | jq -r '.model // empty' 2>/dev/null || true)
+  [ -n "$model" ] || model=$(printf '%s' "$usage_line" \
+      | jq -r '(.modelUsage // {}) | keys[0] // empty' 2>/dev/null || true)
+  printf '%s' "$usage_line" | jq -c --arg model "${model:-unknown}" '{
+      model: $model,
+      input_tokens: (.usage.input_tokens // 0),
+      output_tokens: (.usage.output_tokens // 0),
+      cache_read_input_tokens: (.usage.cache_read_input_tokens // 0),
+      cache_creation_input_tokens: (.usage.cache_creation_input_tokens // 0),
+      cost_usd: (.total_cost_usd // 0),
+      duration_ms: (.duration_ms // 0)
+    }' > "$DIR/usage.json" 2>/dev/null || rm -f "$DIR/usage.json"
+fi
 git -C "$BASE" worktree remove --force "$wt" 2>/dev/null || true
 
 # Everyone this PR is awaiting gets the ready ping — the review is shared, only the posting

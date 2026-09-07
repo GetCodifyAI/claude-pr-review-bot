@@ -8,6 +8,7 @@ export default defineConfig({
   testMatch: "**/*.spec.ts",
   globalSetup: "./e2e/global-setup.ts",
   fullyParallel: true,
+  workers: 2,
   expect: { timeout: 10_000 },
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 1,
