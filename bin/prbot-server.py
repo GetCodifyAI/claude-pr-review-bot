@@ -1438,6 +1438,18 @@ border:1px solid transparent;transition:background .15s,color .15s}
 /* timeline */
 .timeline{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:12px 0 0;
 font-size:.83rem;color:var(--dim)}
+/* GitHub reviewers + status */
+.revcard{margin:12px 0 0}
+.revrow{display:flex;align-items:center;gap:11px;padding:9px 2px}
+.revrow+.revrow{border-top:1px solid var(--line2)}
+.revav{width:26px;height:26px;border-radius:50%;background:var(--panel2);border:1px solid var(--line);
+display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700;
+color:var(--dim);flex:none}
+.revname{flex:1;font-weight:550;font-size:.9rem;min-width:0;overflow:hidden;text-overflow:ellipsis;
+white-space:nowrap}
+.revst{font-size:.78rem;font-weight:650;white-space:nowrap}
+.revst.ok{color:#6fe6b2}.revst.chg{color:#ff8ca0}.revst.cmt{color:var(--dim)}
+.revst.await{color:#f7c26b}
 .step{display:flex;gap:6px;align-items:center;background:var(--panel);border:1px solid var(--line2);
 border-radius:999px;padding:5px 13px}
 .step.hit{border-color:var(--okln);color:#8fecc2;background:var(--okbg)}
@@ -2110,6 +2122,35 @@ def pr_stack(pr):
             break
         chain.append(c); seen.add(c["number"]); cur = c
     return chain
+
+
+def pr_reviewers(pr):
+    """GitHub's reviewer list with each one's status, plus the overall decision — the same info
+    as GitHub's Reviewers sidebar. One gh call."""
+    d = gh_json(["pr", "view", str(pr), "--repo", REPO,
+                 "--json", "reviewRequests,reviews,reviewDecision"], default={})
+    if not isinstance(d, dict):
+        return {"reviewers": [], "decision": None}
+    requested = []
+    for r in d.get("reviewRequests") or []:
+        who = r.get("login") or r.get("slug") or r.get("name")
+        if who:
+            requested.append(who)
+    latest = {}
+    for rv in d.get("reviews") or []:                 # chronological — last state per author wins
+        login = (rv.get("author") or {}).get("login")
+        state = rv.get("state")
+        if login and state and state != "PENDING":
+            latest[login] = state
+    out, seen = [], set()
+    for who in requested:                             # a (re-)requested reviewer reads as pending
+        out.append({"login": who, "state": "AWAITING"})
+        seen.add(who)
+    for login, st in latest.items():
+        if login not in seen:
+            out.append({"login": login, "state": st})
+            seen.add(login)
+    return {"reviewers": out, "decision": d.get("reviewDecision")}
 
 
 def sev_counts(comments):
@@ -3133,6 +3174,33 @@ class Handler(BaseHTTPRequestHandler):
                        + "</span>")
         return f"<div class=timeline>{''.join(out)}</div>"
 
+    def reviewers_card(self, pr):
+        """GitHub's Reviewers, with each one's status — approved / changes requested / commented /
+        awaiting — so you see where the PR's review stands without opening GitHub."""
+        data = pr_reviewers(pr)
+        revs = data.get("reviewers") or []
+        if not revs:
+            return ""
+        S = {"APPROVED": ("ok", "✓", "Approved"),
+             "CHANGES_REQUESTED": ("chg", "±", "Changes requested"),
+             "COMMENTED": ("cmt", "💬", "Commented"),
+             "DISMISSED": ("cmt", "○", "Dismissed"),
+             "AWAITING": ("await", "●", "Awaiting review")}
+        rows = ""
+        for r in revs:
+            cls, ic, lbl = S.get(r["state"], ("await", "●", "Pending"))
+            login = r["login"]
+            rows += (f"<div class=revrow><span class=revav>"
+                     f"{html.escape((login[:1] or '?').upper())}</span>"
+                     f"<span class=revname>{html.escape(login)}</span>"
+                     f"<span class='revst {cls}'>{ic} {lbl}</span></div>")
+        dec = {"CHANGES_REQUESTED": "Changes requested must be addressed to merge.",
+               "APPROVED": "✅ Approved — ready to merge.",
+               "REVIEW_REQUIRED": "Review required before merge."}.get(data.get("decision"), "")
+        foot = f"<div class=hint style='margin-top:8px'>{dec}</div>" if dec else ""
+        return (f"<details class=revcard><summary>Reviewers ({len(revs)})</summary>"
+                f"<div class=dbody>{rows}{foot}</div></details>")
+
     def detail_page(self, pr, user, banner="", version=""):
         # Opening a PR here is what keeps it in your list after it leaves the live queue.
         touch_user(pr, user)
@@ -3188,7 +3256,11 @@ class Handler(BaseHTTPRequestHandler):
                   f"<span>·</span><a href='/prbot/stack?pr={pr}'>🔗 Stack</a>"
                 + ("" if active and user in requested_of(meta)
                    else "<span>· not awaiting your review</span>")
-                + "</div>" + self.timeline(pr, user) + banner)
+                + "</div>" + self.timeline(pr, user)
+                # GitHub reviewers + status. Skipped on the auto-refreshing states so we don't hit
+                # the GitHub API every few seconds.
+                + (self.reviewers_card(pr) if st not in ("reviewing", "queued") else "")
+                + banner)
 
         if st == "stopped":
             halted = not is_running(pr)
