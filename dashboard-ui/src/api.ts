@@ -308,7 +308,7 @@ export const api = {
     post<BannerResult & { connected: boolean }>("/claude/cancel", { ...t }),
   learnings: () => get<LearningsData>("/learnings"),
   stack: (pr: string) => get<StackData>(`/stack?pr=${pr}`),
-  stackRun: (pr: string, t: Token, effort: string) =>
-    post<{ ok: boolean; started: number }>("/stack/run", { pr, ...t, effort }),
+  stackRun: (pr: string, t: Token, effort: string, nums: string[]) =>
+    post<{ ok: boolean; started: number }>("/stack/run", { pr, ...t, effort, nums }),
   how: () => get<HowData>("/how"),
 };

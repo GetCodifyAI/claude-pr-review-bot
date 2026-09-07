@@ -386,7 +386,7 @@ text-transform:uppercase;padding:3px 9px;border-radius:999px}
 .sidefoot .live.dry{background:var(--warnbg);color:#f6cd8a;border:1px solid var(--warnln)}
 .sidefoot .so{color:var(--dim);font-size:.86rem}.sidefoot .so:hover{color:var(--fg)}
 .main{flex:1;min-width:0}
-.main .wrap{padding:34px 36px 56px;max-width:58rem;margin:0}
+.main .wrap{padding:34px 36px 56px;max-width:64rem;margin:0}
 .side{overflow-y:auto}
 @media(max-width:820px){.app{flex-direction:column}.app::before{position:sticky}
 .side{width:auto;height:auto;flex-direction:row;align-items:center;padding:9px 14px;gap:8px;z-index:30;
@@ -469,6 +469,37 @@ padding:3px 8px;border-radius:999px}
 .statuspill.on{background:var(--okbg);color:#6fe6b2;border:1px solid var(--okln)}
 .statuspill.dry{background:var(--warnbg);color:#f6cd8a;border:1px solid var(--warnln)}
 .foota .spacer{flex:1}
+
+/* PR detail: 2-column GitHub-style layout with a right rail */
+.prlayout{display:flex;gap:24px;align-items:flex-start;margin-top:14px}
+.prmain{flex:1;min-width:0}
+.prside{width:264px;flex:none}
+.prside-inner{display:flex;flex-direction:column;gap:14px;position:sticky;top:20px}
+.sidecard{border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:14px 14px 12px}
+.sidehead{font-size:.64rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
+color:var(--faint);margin-bottom:10px}
+.sideact{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:9px;color:var(--fg);
+font-size:.9rem;font-weight:500;transition:background .12s}
+.sideact:hover{background:var(--panel2);color:var(--fg)}
+.sideact-ico{width:18px;text-align:center;flex:none}
+.siderow{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.sideusage{font-family:var(--mono);font-size:.74rem;color:var(--dim);margin:9px 0 0}
+.sidemeta{font-size:.82rem;color:var(--dim);margin-top:8px;line-height:1.4}
+.sidesteps{display:flex;flex-direction:column;gap:9px}
+.sidestep{display:flex;gap:9px;align-items:baseline;font-size:.88rem;color:var(--dim)}
+.sidestep.hit{color:var(--fg)}
+.sidetick{color:var(--faint);flex:none}
+.sidestep.hit .sidetick{color:#6fe6b2}
+.prside .reviewers{margin-top:12px}
+@media(max-width:900px){
+  .prlayout{flex-direction:column}
+  .prside{width:auto;order:-1}
+  .prside-inner{position:static;flex-direction:row;flex-wrap:wrap;gap:12px}
+  .sidecard{flex:1;min-width:200px}
+}
+/* stacked-review selectable rows */
+.stackrow{align-items:center}
+.stackrow .fsel{margin:0 2px 0 14px;flex:none;width:16px;height:16px}
 
 /* integration cards */
 .intg{padding:22px 24px;border:1px solid var(--line);border-radius:16px;margin:16px 0;

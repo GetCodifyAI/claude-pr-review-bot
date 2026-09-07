@@ -12,10 +12,21 @@ export function StackPage() {
   const [d, setD] = useState<StackData | null>(null);
   const [effort, setEffort] = useState("standard");
   const [started, setStarted] = useState<number | null>(null);
+  const [sel, setSel] = useState<Set<string>>(new Set());
   const load = useCallback(() => (pr ? api.stack(pr).then(setD) : Promise.resolve()), [pr]);
   useEffect(() => {
     load();
   }, [load]);
+  // default: every PR in the stack selected
+  useEffect(() => {
+    if (d) setSel(new Set(d.stack.map((it) => it.num)));
+  }, [d]);
+  const toggle = (num: string) =>
+    setSel((prev) => {
+      const next = new Set(prev);
+      next.has(num) ? next.delete(num) : next.add(num);
+      return next;
+    });
 
   const head = (
     <>
@@ -59,9 +70,9 @@ export function StackPage() {
     </div>
   );
 
-  async function runAll() {
-    if (!d) return;
-    const r = await api.stackRun(pr, d.runToken, effort);
+  async function runSelected() {
+    if (!d || sel.size === 0) return;
+    const r = await api.stackRun(pr, d.runToken, effort, [...sel]);
     setStarted(r.started);
     load();
   }
@@ -77,7 +88,14 @@ export function StackPage() {
         {d.stack.map((it, i) => {
           const pos = i === 0 ? "top" : i === d.stack.length - 1 ? "bottom" : "";
           return (
-            <div className="row" key={it.num}>
+            <div className="row stackrow" key={it.num}>
+              <input
+                type="checkbox"
+                className="fsel"
+                checked={sel.has(it.num)}
+                onChange={() => toggle(it.num)}
+                aria-label={`Select #${it.num}`}
+              />
               <Link className="rowlink" to={`/pr?pr=${it.num}`}>
                 <div className="rowtop">
                   <span className="num">#{it.num}</span>
@@ -129,11 +147,16 @@ export function StackPage() {
             </div>
             <div className="runrow">
               <span className="hint" style={{ flex: 1 }}>
-                Queues a review for each PR that isn't already running. They run one at a time on the
-                box.
+                Tick the PRs to review — each queues a review (skipping any already running); they
+                run one at a time on the box.
               </span>
-              <button className="btn primary" type="button" onClick={runAll}>
-                Review all {d.stack.length.toLocaleString()}
+              <button
+                className="btn primary"
+                type="button"
+                onClick={runSelected}
+                disabled={sel.size === 0}
+              >
+                Review selected ({sel.size})
               </button>
             </div>
           </>

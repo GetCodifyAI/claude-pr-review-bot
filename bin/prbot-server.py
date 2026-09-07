@@ -1937,12 +1937,24 @@ class Handler(BaseHTTPRequestHandler):
                             "cs": cs, "updated": upd,
                             "touched": max(t["approved"], t["posted"], t["reviewed"], upd),
                             "blockers": cs.get("blocker", 0), "total": sum(cs.values())})
+        # A PR you're not currently requested on (you just opened it, or were removed as a
+        # reviewer — "no longer requested") that you haven't reviewed yet does NOT belong in
+        # "To review". It stays visible under "All". Reviewed/Posted/Approved still show your
+        # work on PRs that have left your live queue.
+        def entry_tab(e):
+            tb = tab_of(e["st"])
+            if tb == "todo" and not e["active"]:
+                return None
+            return tb
         counts = {k: 0 for k, _ in TABS}
         for e in entries:
-            counts[tab_of(e["st"])] += 1
-            counts["all"] += 1
+            tb = entry_tab(e)
+            if tb:
+                counts[tb] += 1
+            if e["st"] != "archived":
+                counts["all"] += 1
         shown = [e for e in entries
-                 if tab_of(e["st"]) == tab or (tab == "all" and e["st"] != "archived")]
+                 if entry_tab(e) == tab or (tab == "all" and e["st"] != "archived")]
         keys = {"newest": lambda e: -(e["updated"] or int(e["num"])),
                 "oldest": lambda e: (e["updated"] or int(e["num"])),
                 "activity": lambda e: -e["touched"],
@@ -2062,9 +2074,13 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/stack/run":
             if err := gate("stackrun"):
                 return self.api_json({"error": err}, 403)
+            stack_nums = [str(it["number"]) for it in pr_stack(pr)]
+            want = [n for n in (str(x) for x in (body.get("nums") or [])) if n in stack_nums]
+            if not want:                              # no selection sent → review the whole stack
+                want = stack_nums
             started = 0
-            for it in pr_stack(pr):
-                if self._spawn_review(str(it["number"]), user, str(body.get("effort") or ""),
+            for n in want:
+                if self._spawn_review(n, user, str(body.get("effort") or ""),
                                       model=str(body.get("model") or "")):
                     started += 1
             return self.api_json({"ok": True, "started": started})

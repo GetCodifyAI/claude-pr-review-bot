@@ -528,7 +528,18 @@ function RerunSection({ data, onDone }: { data: PrData; onDone: () => void }) {
   );
 }
 
-function Header({ data }: { data: PrData }) {
+function usageChip(u: NonNullable<PrData["usage"]>): string {
+  const cost =
+    u.costUsd > 0
+      ? ` · $${u.costUsd.toLocaleString(undefined, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}`
+      : "";
+  return `${u.model.replace(/^claude-/, "")} · ${u.totalTokens.toLocaleString()} tokens${cost}`;
+}
+
+function HeaderTop({ data }: { data: PrData }) {
   return (
     <>
       <nav className="bc">
@@ -539,66 +550,76 @@ function Header({ data }: { data: PrData }) {
       <h1 className="prtitle">
         #{data.pr} — {data.title}
       </h1>
-      <div className="meta">
-        <span className={"pill " + data.state}>{data.state}</span>
-        {data.dryRun && <span className="pill dry">dry run</span>}
-        {data.effortBadge && (
-          <span className="effbadge" title={data.effortBadge.hint}>
-            {data.effortBadge.label} review
-          </span>
-        )}
-        {data.usage && (
-          <span
-            className="usage"
-            title={
-              `${data.usage.inputTokens.toLocaleString()} input · ` +
-              `${data.usage.outputTokens.toLocaleString()} output tokens` +
-              (data.usage.costUsd > 0
-                ? ` · $${data.usage.costUsd.toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}`
-                : "")
-            }
-          >
-            {data.usage.model.replace(/^claude-/, "")} · {data.usage.totalTokens.toLocaleString()} tokens
-            {data.usage.costUsd > 0
-              ? ` · $${data.usage.costUsd.toLocaleString(undefined, {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}`
-              : ""}
-          </span>
-        )}
-        <span>
-          {data.author}
-          {data.size ? ` · ${data.size}` : ""}
-        </span>
-        <span>·</span>
-        <a href={data.ghUrl} target="_blank" rel="noopener">
-          open on GitHub
+    </>
+  );
+}
+
+// The GitHub-style right rail: quick actions, PR details, and review progress, grouped.
+function PrSidebar({ data }: { data: PrData }) {
+  return (
+    <div className="prside-inner">
+      <div className="sidecard">
+        <div className="sidehead">Actions</div>
+        <a className="sideact" href={data.ghUrl} target="_blank" rel="noopener">
+          <span className="sideact-ico">↗</span> Open on GitHub
         </a>
-        <span>·</span>
-        <Link to={`/qa?pr=${data.pr}`}>QA guide</Link>
-        <span>·</span>
-        <Link to={`/stack?pr=${data.pr}`}>🔗 Stack</Link>
-        {!data.awaiting && <span>· not awaiting your review</span>}
+        <Link className="sideact" to={`/qa?pr=${data.pr}`}>
+          <span className="sideact-ico">🧪</span> QA guide
+        </Link>
+        <Link className="sideact" to={`/stack?pr=${data.pr}`}>
+          <span className="sideact-ico">🔗</span> Stacked review
+        </Link>
       </div>
-      <div className="timeline">
-        {data.timeline.map((s) => (
-          <span key={s.label} className={"step" + (s.done ? " hit" : "")}>
-            {s.done ? "✓" : "○"} {s.label}
-            {s.note && <span className="muted"> {s.note}</span>}
-          </span>
-        ))}
+
+      <div className="sidecard">
+        <div className="sidehead">Details</div>
+        <div className="siderow">
+          <span className={"pill " + data.state}>{data.state}</span>
+          {data.dryRun && <span className="pill dry">dry run</span>}
+          {data.effortBadge && (
+            <span className="effbadge" title={data.effortBadge.hint}>
+              {data.effortBadge.label}
+            </span>
+          )}
+        </div>
+        {data.usage && <div className="sideusage">{usageChip(data.usage)}</div>}
+        {(data.author || data.size) && (
+          <div className="sidemeta">
+            {data.author}
+            {data.size ? ` · ${data.size}` : ""}
+          </div>
+        )}
+        {data.runner && (
+          <div className="sidemeta muted">
+            Ran on {data.runner !== "shared" ? `${data.runner}'s` : "the shared team"} Claude account
+          </div>
+        )}
+        {!data.awaiting && <div className="sidemeta muted">Not awaiting your review</div>}
       </div>
-      {data.reviewers && <Reviewers data={data.reviewers} />}
-      {data.runner && (
-        <p className="muted sm">
-          Reviewed on {data.runner !== "shared" ? <code>{data.runner}</code> : "the shared team runner"}
-          {data.runner !== "shared" ? "'s Claude account" : ""}.
-        </p>
-      )}
+
+      <div className="sidecard">
+        <div className="sidehead">Review progress</div>
+        <div className="sidesteps">
+          {data.timeline.map((s) => (
+            <div key={s.label} className={"sidestep" + (s.done ? " hit" : "")}>
+              <span className="sidetick">{s.done ? "✓" : "○"}</span>
+              <span>
+                {s.label}
+                {s.note && <span className="muted"> {s.note}</span>}
+              </span>
+            </div>
+          ))}
+        </div>
+        {data.reviewers && <Reviewers data={data.reviewers} />}
+      </div>
+    </div>
+  );
+}
+
+// Contextual alert banners (risk / focus / stale) — shown atop the main column.
+function PrBanners({ data }: { data: PrData }) {
+  return (
+    <>
       {data.risk.map((r) => (
         <div className="banner info" key={r.title}>
           <span>{r.icon}</span>
@@ -619,7 +640,8 @@ function Header({ data }: { data: PrData }) {
         <div className="banner warn">
           <span>🔄</span>
           <div>
-            <b>The author pushed new commits since this review.</b> The findings may be out of date — re-run below.
+            <b>The author pushed new commits since this review.</b> The findings may be out of date —
+            re-run below.
           </div>
         </div>
       )}
@@ -696,8 +718,11 @@ export function PrPage(_props: { me: Me }) {
 
   return (
     <>
-      <Header data={data} />
-      {data.reviewing && <ProgressPanel pr={pr} data={data} onStop={load} />}
+      <HeaderTop data={data} />
+      <div className="prlayout">
+        <div className="prmain">
+          <PrBanners data={data} />
+          {data.reviewing && <ProgressPanel pr={pr} data={data} onStop={load} />}
       {data.stopped && (
         <>
           <div className="banner warn">
@@ -766,7 +791,12 @@ export function PrPage(_props: { me: Me }) {
         </>
       )}
       {data.notReviewed && data.approved && <ApprovedCard a={data.approved} ghUrl={data.ghUrl} />}
-      {data.review && <ReviewBody data={data} onDone={load} />}
+          {data.review && <ReviewBody data={data} onDone={load} />}
+        </div>
+        <aside className="prside">
+          <PrSidebar data={data} />
+        </aside>
+      </div>
     </>
   );
 }
