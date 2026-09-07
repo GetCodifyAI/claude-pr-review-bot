@@ -154,6 +154,20 @@ def save_users(users):
     tmp.replace(USERS)
 
 
+# All writers to users.json live in this one server process (pr-watch only reads it), so a
+# process-wide lock is enough to make the load → modify → save sequence atomic and keep two
+# simultaneous sign-ins / settings saves from losing each other's update.
+_users_lock = threading.Lock()
+
+
+def modify_users(fn):
+    """Serialized read-modify-write of users.json. fn(users) mutates the dict in place."""
+    with _users_lock:
+        users = load_users()
+        fn(users)
+        save_users(users)
+
+
 def user_pat(login):
     """The token to act as `login`: their GitHub-login OAuth token if they signed in that way
     (refreshed here if it has expired), else the PAT they pasted."""
@@ -255,9 +269,7 @@ def oauth_store(login, d, name, prev):
     if d.get("refresh_token"):
         u["gh_refresh_enc"] = enc(d["refresh_token"])
         u["gh_refresh_exp"] = now + int(d.get("refresh_token_expires_in") or 0)
-    users = load_users()
-    users[login] = u
-    save_users(users)
+    modify_users(lambda users: users.__setitem__(login, u))
 
 
 def oauth_fresh_token(login, u):
@@ -448,16 +460,17 @@ def claude_refresh(login, u):
 def store_claude_token(login, data):
     """Persist an access(+refresh) token response, encrypted, with an absolute expiry."""
     now = int(time.time())
-    users = load_users()
-    u = users.get(login) or {}
-    u["claude_token_enc"] = enc(data["access_token"])
-    u["claude_exp"] = now + int(data["expires_in"]) if data.get("expires_in") else 0
-    u["claude_added"] = u.get("claude_added") or now
-    u["updated"] = now
-    if data.get("refresh_token"):
-        u["claude_refresh_enc"] = enc(data["refresh_token"])
-    users[login] = u
-    save_users(users)
+
+    def apply(users):
+        u = users.get(login) or {}
+        u["claude_token_enc"] = enc(data["access_token"])
+        u["claude_exp"] = now + int(data["expires_in"]) if data.get("expires_in") else 0
+        u["claude_added"] = u.get("claude_added") or now
+        u["updated"] = now
+        if data.get("refresh_token"):
+            u["claude_refresh_enc"] = enc(data["refresh_token"])
+        users[login] = u
+    modify_users(apply)
 
 
 def review_env(login):
@@ -2172,7 +2185,7 @@ class Handler(BaseHTTPRequestHandler):
         # GitHub's new-token page accepts the scope and name in the URL, so the person only
         # has to pick an expiry and click Generate — no hunting for the right checkbox.
         new_tok = "https://github.com/settings/tokens/new?" + urlencode(
-            {"scopes": "repo", "description": f"Robin ({ENV.get('PRBOT_ENV', 'prbot')})"})
+            {"scopes": "repo", "description": "Robin — Cut+Dry PR reviews"})
         body = (
             "<div class=auth><div class=authcard>"
             f"<img class=authlogo src='{prbot_assets.LOGO}' alt=''>"
@@ -2209,13 +2222,17 @@ class Handler(BaseHTTPRequestHandler):
         if err:
             return self.login_page(nxt, f"<div class='banner err'><span>🚫</span><div>"
                                         f"{html.escape(err)}</div></div>")
-        users = load_users()
-        prev = users.get(login) or {}
-        u = dict(prev)
-        u.update({"pat_enc": enc(pat), "name": name,
-                  "added": prev.get("added") or int(time.time()), "updated": int(time.time())})
-        users[login] = u
-        save_users(users)
+        prev = {}
+
+        def apply(users):
+            nonlocal prev
+            prev = users.get(login) or {}
+            u = dict(prev)
+            u.update({"pat_enc": enc(pat), "name": name,
+                      "added": prev.get("added") or int(time.time()),
+                      "updated": int(time.time())})
+            users[login] = u
+        modify_users(apply)
         print(f"login: {login}", flush=True)
         if not nxt.startswith("/prbot/"):
             nxt = "/prbot/"
@@ -2432,12 +2449,13 @@ class Handler(BaseHTTPRequestHandler):
             claude_connect_cancel(user)
             return back()
         if step == "disconnect":
-            users = load_users()
-            uu = users.get(user) or {}
-            for k in ("claude_token_enc", "claude_refresh_enc", "claude_exp", "claude_added"):
-                uu.pop(k, None)
-            users[user] = uu
-            save_users(users)
+            def apply(users):
+                uu = users.get(user) or {}
+                for k in ("claude_token_enc", "claude_refresh_enc", "claude_exp",
+                          "claude_added"):
+                    uu.pop(k, None)
+                users[user] = uu
+            modify_users(apply)
             claude_connect_cancel(user)
             return back("<div class='banner ok'><span>✓</span><div>Claude disconnected — reviews "
                         "you start use the shared team runner again.</div></div>")
@@ -2666,23 +2684,29 @@ class Handler(BaseHTTPRequestHandler):
         def again(msg):
             return self.settings_page(user, f"<div class='banner err'><span>🚫</span><div>{msg}"
                                             f"</div></div>", welcome=welcome, nxt=nxt)
-        users = load_users()
-        u = users.get(user) or {}
-        # Each integration card is its own form, so only touch a field the form actually sent —
-        # the GitHub form has no slack_id and must not wipe it, and vice versa.
-        if "slack_id" in form:
-            u["slack_id"] = one("slack_id").strip()
+        # Validate first (verify_pat is a network call) so the locked mutation stays quick and has
+        # no early returns inside it. Each integration card is its own form, so only touch a field
+        # the form actually sent — the GitHub form has no slack_id and must not wipe it, vice versa.
+        slack_val = one("slack_id").strip() if "slack_id" in form else None
         pat = one("pat").strip()
+        new_pat_enc = new_name = None
         if pat:
             login, name, err = verify_pat(pat)
             if err:
                 return again(html.escape(err))
             if login != user:
                 return again(f"That token belongs to <code>{html.escape(login)}</code>, not you.")
-            u["pat_enc"], u["name"] = enc(pat), name
-        u["updated"] = int(time.time())
-        users[user] = u
-        save_users(users)
+            new_pat_enc, new_name = enc(pat), name
+
+        def apply(users):
+            u = users.get(user) or {}
+            if slack_val is not None:
+                u["slack_id"] = slack_val
+            if new_pat_enc is not None:
+                u["pat_enc"], u["name"] = new_pat_enc, new_name
+            u["updated"] = int(time.time())
+            users[user] = u
+        modify_users(apply)
         return self.settings_page(user, "<div class='banner ok'><span>✓</span><div>Saved."
                                         "</div></div>", welcome=welcome, nxt=nxt)
 

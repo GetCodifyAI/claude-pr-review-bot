@@ -45,6 +45,32 @@ echo "$tagged" | jq -s 'group_by(.number) | map(.[0] + {requested: (map(.request
   > "$ROOT/queue.json.tmp" \
   && mv "$ROOT/queue.json.tmp" "$ROOT/queue.json"
 
+# --- New-user clean slate ---------------------------------------------------------------------
+# A person signing in usually has a backlog of open review requests they'll never action. We
+# don't want to Slack-spam them with a card for each, or fill their "To review" with old ones —
+# they should start fresh and only see requests from now on. So the FIRST time we ever see a
+# login, seed its whole current backlog as already-notified (no Slack) and archive it in the
+# dashboard. Only genuinely-new requests after this point ping and land in "To review".
+KNOWN="$ROOT/known_logins"
+if [ ! -f "$KNOWN" ]; then
+  # First run of this logic on an existing box: treat everyone already signed in as onboarded,
+  # so upgrading never archives a current user's live queue.
+  printf '%s\n' $logins > "$KNOWN"
+fi
+for login in $logins; do
+  grep -qxF "$login" "$KNOWN" && continue
+  n=0
+  for num in $(jq -r --arg u "$login" \
+                 '.[] | select(.requested | index($u)) | .number' "$ROOT/queue.json"); do
+    grep -qxF "$num:$login" "$SEEN" || echo "$num:$login" >> "$SEEN"
+    mkdir -p "$STATE/$num/users/$login"
+    [ -f "$STATE/$num/users/$login/archived" ] || date +%s > "$STATE/$num/users/$login/archived"
+    n=$((n + 1))
+  done
+  echo "$login" >> "$KNOWN"
+  echo "==> new user $login: seeded $n backlog PR(s) as seen + archived (clean slate)"
+done
+
 # <@U…> pings the person; a bare @login is a visible label that pings nobody, which is what
 # you get until you add your Slack member ID in the dashboard's settings.
 mention() {
