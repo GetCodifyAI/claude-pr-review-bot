@@ -43,6 +43,10 @@ case "$EFFORT" in
   *)     EFFORT=standard; TIMEOUT=25m; FALLBACK="Effort: STANDARD — changed files + context, correctness and clear risks.";;
 esac
 DEPTH="${PRBOT_DEPTH:-$FALLBACK}"
+# Optional model override chosen at trigger time (validated server-side). Empty = account default.
+MODEL="${PRBOT_MODEL:-}"
+MODEL_ARG=()
+[ -n "$MODEL" ] && MODEL_ARG=(--model "$MODEL")
 echo "$EFFORT" > "$DIR/effort"
 
 status "fetching"
@@ -155,6 +159,7 @@ ${CONTRACT}"
 fi
 
 (cd "$wt" && timeout "$TIMEOUT" claude -p "$PROMPT" \
+  ${MODEL_ARG[@]+"${MODEL_ARG[@]}"} \
   --output-format stream-json --verbose \
   --allowedTools "Bash Read Glob Grep Write" < /dev/null) >"$DIR/agent.log" 2>&1
 

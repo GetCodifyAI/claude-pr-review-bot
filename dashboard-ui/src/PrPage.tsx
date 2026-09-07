@@ -90,6 +90,7 @@ function RunForm({
   onStarted: () => void;
 }) {
   const [effort, setEffort] = useState(form.suggested);
+  const [model, setModel] = useState("");
   const [focus, setFocus] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -100,7 +101,7 @@ function RunForm({
         e.preventDefault();
         setErr("");
         setBusy(true);
-        const r = await api.review(pr, token, effort, focus);
+        const r = await api.review(pr, token, effort, focus, model);
         if (r.started === false) {
           // A previous run still holds the per-PR lock (e.g. a stop that could not be confirmed).
           setBusy(false);
@@ -132,6 +133,25 @@ function RunForm({
           </label>
         ))}
       </div>
+      {form.models && form.models.length > 0 && (
+        <>
+          <div className="effort-lbl">Model</div>
+          <div className="effrow">
+            {form.models.map((m) => (
+              <label key={m.key} className={"eff" + (model === m.key ? " hot" : "")}>
+                <input
+                  type="radio"
+                  name="model"
+                  checked={model === m.key}
+                  onChange={() => setModel(m.key)}
+                />
+                <span className="effname">{m.name}</span>
+                <span className="effsub">{m.sub}</span>
+              </label>
+            ))}
+          </div>
+        </>
+      )}
       <div className="focuswrap">
         <div className="effort-lbl">Focus — optional</div>
         <textarea

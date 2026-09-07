@@ -636,6 +636,15 @@ EFFORT = {
 }
 EFFORT_ORDER = ["quick", "standard", "deep"]
 
+# Model the reviewer can pick at trigger time. "" = the account's default (no --model passed).
+# Keys are the aliases Claude Code's --model accepts; validated server-side so nothing arbitrary
+# ever reaches the CLI.
+MODELS = [("", "Default", "your Claude plan's default"),
+          ("opus", "Opus", "most capable \u00b7 deepest review"),
+          ("sonnet", "Sonnet", "balanced \u00b7 faster"),
+          ("haiku", "Haiku", "fastest \u00b7 light PRs")]
+MODEL_KEYS = {k for k, _, _ in MODELS}
+
 # The depth instruction appended to the active skill's prompt for each level. All three run the
 # SAME skill — only this text and the timeout differ. These are the defaults; a team can edit them
 # on the Skills page (stored as _effort_<level>.md) and run-review.sh receives the chosen text.
@@ -1611,6 +1620,7 @@ class Handler(BaseHTTPRequestHandler):
         return {"suggested": autosize_effort(meta),
                 "levels": [{"key": k, "name": EFFORT[k][0], "sub": EFFORT[k][1]}
                            for k in EFFORT_ORDER],
+                "models": [{"key": k, "name": n, "sub": sub} for k, n, sub in MODELS],
                 "skillLabel": skill_label}
 
     def _tok(self, action, pr, ttl=ACTION_TTL):
@@ -1952,7 +1962,8 @@ class Handler(BaseHTTPRequestHandler):
             if err := gate("review"):
                 return self.api_json({"error": err}, 403)
             started = self._spawn_review(pr, user, str(body.get("effort") or ""),
-                                         str(body.get("focus") or ""))
+                                         str(body.get("focus") or ""),
+                                         str(body.get("model") or ""))
             # started is False when a previous run still holds the per-PR lock (e.g. a stop that
             # could not be confirmed). Surface it so the UI doesn't look like a silent no-op.
             return self.api_json({"ok": True, "started": started})
@@ -1974,7 +1985,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.api_json({"error": err}, 403)
             started = 0
             for it in pr_stack(pr):
-                if self._spawn_review(str(it["number"]), user, str(body.get("effort") or "")):
+                if self._spawn_review(str(it["number"]), user, str(body.get("effort") or ""),
+                                      model=str(body.get("model") or "")):
                     started += 1
             return self.api_json({"ok": True, "started": started})
         if route == "/api/markdone":
@@ -2213,7 +2225,7 @@ class Handler(BaseHTTPRequestHandler):
         modify_users(apply)
         return "<div class='banner ok'><span>✓</span><div>Saved.</div></div>"
 
-    def _spawn_review(self, pr, user, effort="", focus=""):
+    def _spawn_review(self, pr, user, effort="", focus="", model=""):
         """Queue one review (no redirect). Returns True if it actually spawned, False if a review
         was already running for that PR. Shared by start_review and the stack runner."""
         pr = str(pr)
@@ -2231,14 +2243,17 @@ class Handler(BaseHTTPRequestHandler):
         eff = effort if effort in EFFORT else autosize_effort(meta)
         focus = (focus or "").strip()[:2000]
         archive_review(pr)                          # keep the prior run in history/
+        mdl = model if model in MODEL_KEYS else ""
         (d / "effort").write_text(eff)
         (d / "focus").write_text(focus)
+        (d / "model").write_text(mdl)
         (d / "status").write_text("queued")
         choice, _ = effective_skill(user)
         env = review_env(user)
         env["PRBOT_EFFORT"] = eff
         env["PRBOT_DEPTH"] = effort_depth(eff)
         env["PRBOT_FOCUS"] = focus
+        env["PRBOT_MODEL"] = mdl
         env["PRBOT_SKILL_CHOICE"] = choice
         with open(d / "run.log", "ab") as log:
             proc = subprocess.Popen([str(BIN / "run-review.sh"), pr], stdout=log,
