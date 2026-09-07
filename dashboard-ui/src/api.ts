@@ -81,10 +81,119 @@ export interface QueueData {
   slackOk: boolean;
 }
 
+export interface Finding {
+  i: number;
+  severity: string;
+  sevLabel: string;
+  path: string;
+  line: number | string;
+  thread: string | null;
+  body: string;
+  suggestion: string;
+  low: boolean;
+}
+
+export interface ApprovedData {
+  at: string;
+  ago: string;
+  manual: boolean;
+  body: string;
+  user: string;
+}
+
+export interface ReviewData {
+  event: string;
+  summary: string;
+  explainer: string;
+  analysis: string;
+  chips: SevChip[];
+  findings: Finding[];
+  count: number;
+  posted: boolean;
+  postLabel: string;
+  approve?: { lgtm: boolean; blockers: number; defaultMsg: string };
+  approved?: ApprovedData;
+}
+
+export interface Reviewer { login: string; state: string }
+export interface ReviewersData { reviewers: Reviewer[]; decision: string | null }
+export interface TimelineStep { label: string; done: boolean; note: string }
+export interface EffortLevel { key: string; name: string; sub: string }
+export interface RunFormData { suggested: string; levels: EffortLevel[]; skillLabel: string }
+export interface Risk { icon: string; title: string; note: string }
+export interface HistoryRun {
+  ts: number;
+  effort: string;
+  focus: string;
+  findings: number;
+  event: string;
+}
+
+export interface PrData {
+  historyView?: boolean;
+  ts?: number;
+  when?: string;
+  pr: string;
+  title: string;
+  state: string;
+  ghUrl: string;
+  author: string;
+  size: string;
+  dryRun: boolean;
+  awaiting: boolean;
+  runner: string;
+  effortBadge: { label: string; hint: string } | null;
+  focus: string;
+  stale: boolean;
+  risk: Risk[];
+  timeline: TimelineStep[];
+  reviewers: ReviewersData | null;
+  claudeConnected: boolean;
+  runForm: RunFormData;
+  tokens: Record<string, Token>;
+  reviewing?: {
+    phases: string[];
+    cur: number;
+    queued: boolean;
+    effortLabel: string;
+    effortHint: string;
+    focus: string;
+  };
+  stopped?: { halted: boolean };
+  stalled?: { was: string; tail: string };
+  notReviewed?: boolean;
+  failed?: string;
+  approved?: ApprovedData;
+  review?: ReviewData;
+  showMarkDone?: boolean;
+  history: HistoryRun[];
+  // history view only
+  summary?: string;
+  findings?: { severity: string; sevLabel: string; path: string; line: number | string; body: string }[];
+}
+
+export interface BannerResult {
+  bannerHtml: string;
+}
+
 export const api = {
   me: () => get<Me>("/me"),
   queue: (tab: string, sort: string) =>
     get<QueueData>(`/queue?tab=${encodeURIComponent(tab)}&sort=${encodeURIComponent(sort)}`),
   login: (pat: string) => post<{ ok: boolean; login: string }>("/login", { pat }),
   logout: () => post<{ ok: boolean }>("/logout"),
+  pr: (pr: string, v?: string) => get<PrData>(`/pr?pr=${pr}${v ? `&v=${v}` : ""}`),
+  review: (pr: string, t: Token, effort: string, focus: string) =>
+    post<{ ok: boolean }>("/review", { pr, ...t, effort, focus }),
+  stop: (pr: string, t: Token) => post<{ ok: boolean; confirmed: boolean }>("/stop", { pr, ...t }),
+  markdone: (pr: string, t: Token) => post<{ ok: boolean }>("/markdone", { pr, ...t }),
+  archive: (pr: string, t: Token, action: "archive" | "unarchive") =>
+    post<{ ok: boolean }>("/archive", { pr, ...t, action }),
+  post: (
+    pr: string,
+    t: Token,
+    payload: { selected: number[]; bodies: Record<number, string>; suggs: Record<number, string>; request_changes: boolean }
+  ) => post<BannerResult>("/post", { pr, ...t, ...payload }),
+  approve: (pr: string, t: Token, body: string, ack: boolean) =>
+    post<BannerResult>("/approve", { pr, ...t, body, ack }),
 };

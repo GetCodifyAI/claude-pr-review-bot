@@ -2436,7 +2436,151 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/queue":
             return self.api_json(self.api_queue(user, (q.get("tab") or ["todo"])[0],
                                                 (q.get("sort") or ["newest"])[0]))
+        if route == "/api/pr":
+            pr = (q.get("pr") or [""])[0]
+            if not pr.isdigit():
+                return self.api_json({"error": "missing pr"}, 400)
+            return self.api_json(self.api_pr(pr, user, (q.get("v") or [""])[0]))
         return self.api_json({"error": "not found"}, 404)
+
+    def _run_form_data(self, user, meta):
+        _, skill_label = effective_skill(user)
+        return {"suggested": autosize_effort(meta),
+                "levels": [{"key": k, "name": EFFORT[k][0], "sub": EFFORT[k][1]}
+                           for k in EFFORT_ORDER],
+                "skillLabel": skill_label}
+
+    def _tok(self, action, pr, ttl=ACTION_TTL):
+        exp, sig = mint(action, pr, ttl)
+        return {"exp": exp, "sig": sig}
+
+    def api_pr(self, pr, user, version):
+        touch_user(pr, user)
+        if version.isdigit():
+            rev = load_history_review(pr, int(version)) or {}
+            comments = sorted(rev.get("comments", []),
+                              key=lambda c: SEV_ORDER.get(c.get("severity"), 9))
+            return {"historyView": True, "pr": pr, "ts": int(version),
+                    "title": qa_meta(pr).get("title") or pr_meta(pr)[0].get("title", f"PR #{pr}"),
+                    "when": f"{fmt_date(int(version))} ({ago(int(version))})",
+                    "summary": rev.get("summary", ""),
+                    "findings": [{"severity": c.get("severity", "nit"),
+                                  "sevLabel": SEV_LABEL.get(c.get("severity", "nit"),
+                                                            c.get("severity", "nit")),
+                                  "path": c.get("path", "?"), "line": c.get("line", "?"),
+                                  "body": c.get("body", "")} for c in comments]}
+        st = pr_state(pr, user)
+        meta, active = pr_meta(pr)
+        eff = review_effort(pr)
+        foc = review_focus(pr)
+        runner = (STATE / pr / "runner").read_text().strip() if (STATE / pr / "runner").exists() else ""
+        head_f = STATE / pr / "head"
+        cur_head = meta.get("head", "")
+        stale = bool(head_f.exists() and cur_head and head_f.read_text().strip() != cur_head)
+        out = {
+            "pr": pr, "title": meta.get("title", f"PR #{pr}"), "state": st,
+            "ghUrl": meta.get("url", f"https://github.com/{REPO}/pull/{pr}"),
+            "author": meta.get("author", ""),
+            "size": (f"+{meta.get('additions', 0):,} −{meta.get('deletions', 0):,} · "
+                     f"{meta['changedFiles']} files") if meta.get("changedFiles") else "",
+            "dryRun": DRY_RUN,
+            "awaiting": bool(active and user in requested_of(meta)),
+            "runner": runner,
+            "effortBadge": ({"label": EFFORT[eff][0], "hint": EFFORT[eff][2]}
+                            if eff and st not in ("reviewing", "queued") else None),
+            "focus": foc,
+            "stale": stale,
+            "risk": [{"icon": RISK_INFO[f][0], "title": RISK_INFO[f][1], "note": RISK_INFO[f][2]}
+                     for f in review_risk(pr)],
+            "timeline": self._timeline_data(pr, user),
+            "reviewers": (pr_reviewers(pr) if st not in ("reviewing", "queued") else None),
+            "claudeConnected": claude_connected(user),
+            "runForm": self._run_form_data(user, meta),
+            "tokens": {"review": self._tok("review", pr, PAGE_TTL),
+                       "stop": self._tok("stop", pr), "post": self._tok("post", pr),
+                       "approve": self._tok("approve", pr), "markdone": self._tok("markdone", pr),
+                       "archive": self._tok("archive", pr),
+                       "unarchive": self._tok("unarchive", pr)},
+            "history": review_history(pr),
+        }
+        if st == "reviewing":
+            s = (STATE / pr / "status").read_text().strip().lower()
+            reff = eff or "standard"
+            out["reviewing"] = {
+                "phases": ["Fetching the PR", "Checking out the branch", "Reviewing the diff",
+                           "Writing the findings"],
+                "cur": (0 if "fetch" in s else 1 if ("checking out" in s or "queued" in s)
+                        else 2 if "reviewing" in s else 3),
+                "queued": "queued" in s, "effortLabel": EFFORT[reff][0],
+                "effortHint": EFFORT[reff][2], "focus": foc}
+            return out
+        if st == "stopped":
+            out["stopped"] = {"halted": not is_running(pr)}
+            return out
+        if st == "stalled":
+            log = STATE / pr / "agent.log"
+            out["stalled"] = {"was": (STATE / pr / "status").read_text().strip(),
+                              "tail": (log.read_text()[-400:].strip() if log.exists() else "")}
+            return out
+        rev = load_review(pr)
+        appr = marker(pr, "approved", user)
+        if not rev:
+            out["notReviewed"] = True
+            if st == "failed":
+                out["failed"] = (STATE / pr / "status").read_text().strip()
+            if appr.get("at"):
+                out["approved"] = self._approved_data(appr, user)
+            return out
+        out["review"] = self._review_data(pr, user, rev, appr)
+        out["showMarkDone"] = st != "approved"
+        return out
+
+    def _timeline_data(self, pr, user):
+        t = pr_times(pr, user)
+        posted = marker(pr, "posted.json", user)
+        return [
+            {"label": "Reviewed", "done": bool(t["reviewed"]),
+             "note": ago(t["reviewed"]) if t["reviewed"] else ""},
+            {"label": "Comments posted", "done": bool(t["posted"]),
+             "note": (f"{posted.get('inline', 0)} inline · {fmt_date(t['posted'])}"
+                      if t["posted"] else "")},
+            {"label": "Approved", "done": bool(t["approved"]),
+             "note": fmt_date(t["approved"]) if t["approved"] else ""}]
+
+    def _approved_data(self, appr, user):
+        return {"at": fmt_date(appr["at"]), "ago": ago(appr["at"]), "manual": bool(appr.get("manual")),
+                "body": appr.get("body", ""), "user": user}
+
+    def _review_data(self, pr, user, rev, appr):
+        ev = rev.get("event", "COMMENT")
+        comments = sorted(rev.get("comments", []),
+                          key=lambda c: SEV_ORDER.get(c.get("severity"), 9))
+        cs = sev_counts(comments)
+        findings = []
+        for i, c in enumerate(comments):
+            findings.append({"i": i, "severity": c.get("severity", "nit"),
+                             "sevLabel": SEV_LABEL.get(c.get("severity", "nit"),
+                                                       c.get("severity", "nit")),
+                             "path": c.get("path", "?"), "line": c.get("line", "?"),
+                             "thread": (c["reply_to"] if c.get("reply_to") else None),
+                             "body": c.get("body", ""), "suggestion": c.get("suggestion", "") or "",
+                             "low": c.get("confidence") == "low"})
+        data = {
+            "event": ev, "summary": rev.get("summary", ""),
+            "explainer": rev.get("explainer", ""), "analysis": rev.get("analysis", ""),
+            "chips": [{"kind": k, "n": n, "label": SEV_LABEL.get(k, k)}
+                      for k, n in sorted(cs.items(), key=lambda kv: SEV_ORDER.get(kv[0], 9))],
+            "findings": findings, "count": len(comments),
+            "posted": upath(pr, user, "posted.json").exists(),
+            "postLabel": "Post selected" + (" (dry run)" if DRY_RUN else " to GitHub"),
+        }
+        if appr.get("at"):
+            data["approved"] = self._approved_data(appr, user)
+        else:
+            blockers = cs.get("blocker", 0)
+            data["approve"] = {"lgtm": blockers == 0 and ev != "REQUEST_CHANGES",
+                               "blockers": blockers, "defaultMsg": default_approve_msg(rev)}
+        return data
 
     def api_me(self, user):
         if not user:
@@ -2530,7 +2674,79 @@ class Handler(BaseHTTPRequestHandler):
             return self.api_json({"error": "unauthorized"}, 401)
         if route == "/api/logout":
             return self.api_json({"ok": True}, cookie=clear_session_cookie())
+
+        # PR-scoped actions — all gated by the signed token in the body (same model as the forms).
+        pr = str(body.get("pr") or "")
+        exp, sig = str(body.get("exp") or ""), str(body.get("sig") or "")
+        if not pr.isdigit():
+            return self.api_json({"error": "missing pr"}, 400)
+
+        def gate(action):
+            return verify(action, pr, exp, sig)
+
+        if route == "/api/review":
+            if err := gate("review"):
+                return self.api_json({"error": err}, 403)
+            self._spawn_review(pr, user, str(body.get("effort") or ""), str(body.get("focus") or ""))
+            return self.api_json({"ok": True})
+        if route == "/api/stop":
+            if err := gate("stop"):
+                return self.api_json({"error": err}, 403)
+            return self.api_json({"ok": True, "confirmed": stop_review(pr, user)})
+        if route == "/api/markdone":
+            if err := gate("markdone"):
+                return self.api_json({"error": err}, 403)
+            d = udir(pr, user)
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "approved").write_text(json.dumps(
+                {"at": int(time.time()), "manual": True,
+                 "body": "Handled outside the bot — approved on GitHub directly."}))
+            return self.api_json({"ok": True})
+        if route == "/api/archive":
+            act = "unarchive" if body.get("action") == "unarchive" else "archive"
+            if err := gate(act):
+                return self.api_json({"error": err}, 403)
+            f = udir(pr, user) / "archived"
+            f.parent.mkdir(parents=True, exist_ok=True)
+            if act == "archive":
+                f.write_text(str(int(time.time())))
+            else:
+                f.unlink(missing_ok=True)
+            return self.api_json({"ok": True})
+        if route == "/api/post":
+            if err := gate("post"):
+                return self.api_json({"error": err}, 403)
+            return self.api_json({"bannerHtml": self._post_result(pr, user, self._post_form(pr, body))})
+        if route == "/api/approve":
+            if err := gate("approve"):
+                return self.api_json({"error": err}, 403)
+            form = {"pr": [pr], "ack": ["1"] if body.get("ack") else [],
+                    "approve_body": [str(body.get("body") or "")]}
+            return self.api_json({"bannerHtml": self._approve_result(pr, user, form)})
         return self.api_json({"error": "not found"}, 404)
+
+    def _post_form(self, pr, body):
+        """Rebuild the form dict _post_result expects from the JSON post body. path/line/severity
+        come from the stored review (not the client) — only selection, body and suggestion are
+        the reviewer's to change."""
+        rev = load_review(pr) or {}
+        originals = sorted(rev.get("comments", []),
+                           key=lambda c: SEV_ORDER.get(c.get("severity"), 9))
+        sel = set(body.get("selected") or [])
+        bodies = body.get("bodies") or {}
+        suggs = body.get("suggs") or {}
+        form = {"pr": [pr], "count": [str(len(originals))]}
+        if body.get("request_changes"):
+            form["request_changes"] = ["on"]
+        for i, c in enumerate(originals):
+            if i in sel:
+                form[f"sel_{i}"] = ["on"]
+            form[f"body_{i}"] = [str(bodies.get(str(i), c.get("body", "")))]
+            form[f"sugg_{i}"] = [str(suggs.get(str(i), c.get("suggestion", "") or ""))]
+            form[f"path_{i}"] = [c.get("path", "")]
+            form[f"line_{i}"] = [str(c.get("line", "") or "")]
+            form[f"sev_{i}"] = [c.get("severity", "nit")]
+        return form
 
     def do_POST(self):
         n = int(self.headers.get("Content-Length") or 0)
@@ -4035,6 +4251,11 @@ class Handler(BaseHTTPRequestHandler):
         return self.reply(200, shell(f"QA #{pr}", head + gen, user=user, active="qa"))
 
     def do_post_comments(self, pr, user, form):
+        return self.detail_page(pr, user, self._post_result(pr, user, form))
+
+    def _post_result(self, pr, user, form):
+        """Post the selected comments; returns a banner HTML string (reused by the HTML page and
+        the JSON API)."""
         one = lambda k: (form.get(k) or [""])[0]  # noqa: E731
         rev = load_review(pr) or {}
         chosen = []
@@ -4062,21 +4283,21 @@ class Handler(BaseHTTPRequestHandler):
         skill = skill_f.read_text().strip() if skill_f.exists() else "global"
         prbot_learn.record(pr, user, originals, form, skill=skill)
         if not chosen:
-            return self.detail_page(pr, user, "<div class='banner warn'><span>⚠️</span><div>"
-                                              "Nothing selected — nothing sent.</div></div>")
+            return ("<div class='banner warn'><span>⚠️</span><div>"
+                    "Nothing selected — nothing sent.</div></div>")
 
         # Re-validate anchors against the CURRENT diff: the PR may have gained commits while
         # this review sat in the dashboard, and one stale line 422s the whole review.
         files, err = fetch_pr_files(pr)
         if err is not None:
-            return self.detail_page(pr, user, (
+            return (
                 f"<div class='banner err'><span>🔴</span><div><b>Could not fetch the PR diff "
                 f"from GitHub — nothing was posted.</b><br>Without it every comment would be "
                 f"demoted out of the diff and posted as a plain summary, so this refuses "
                 f"rather than posting a degraded review. Check "
                 f"<a href='https://www.githubstatus.com' target=_blank rel=noopener>"
                 f"githubstatus.com</a> and retry.<br>"
-                f"<code>{html.escape(err)}</code></div></div>"))
+                f"<code>{html.escape(err)}</code></div></div>")
         inline, orphans = prbot_diff.split_anchorable(chosen, prbot_diff.anchor_map(files))
         # No bot signature: this posts under the reviewer's own account, so GitHub already
         # attributes it. A trailing "Reviewed by @x" only restates the byline.
@@ -4090,70 +4311,66 @@ class Handler(BaseHTTPRequestHandler):
         (ud / "payload.json").write_text(json.dumps(payload))
 
         if DRY_RUN:
-            return self.detail_page(pr, user, (
+            return (
                 f"<div class='banner warn'><span>🧪</span><div><b>DRY RUN — nothing was sent "
                 f"to GitHub.</b><br>Would post {len(inline)} inline comment(s)"
                 + (f", {len(orphans)} folded into the summary" if orphans else "")
                 + f", as <code>{event}</code>. Set <code>DRY_RUN=0</code> and restart "
-                  f"<code>prbot</code> to post for real.</div></div>"))
+                  f"<code>prbot</code> to post for real.</div></div>")
 
         tok = user_pat(user)
         if not tok:
-            return self.detail_page(pr, user, "<div class='banner err'><span>🚫</span><div>"
-                                              "Your stored GitHub token could not be read — "
-                                              "paste it again in <a href='/prbot/settings'>"
-                                              "settings</a>.</div></div>")
+            return ("<div class='banner err'><span>🚫</span><div>"
+                    "Your stored GitHub token could not be read — "
+                    "paste it again in <a href='/prbot/integrations'>settings</a>.</div></div>")
         r = gh(["api", "--method", "POST", f"repos/{REPO}/pulls/{pr}/reviews",
                 "--input", str(ud / "payload.json")], token=tok)
         if r.returncode != 0:
-            return self.detail_page(pr, user, f"<div class='banner err'><span>🔴</span><div>"
-                                              f"GitHub rejected it: <code>"
-                                              f"{html.escape(r.stderr[:400])}</code></div></div>")
+            return (f"<div class='banner err'><span>🔴</span><div>GitHub rejected it: <code>"
+                    f"{html.escape(r.stderr[:400])}</code></div></div>")
         (ud / "posted.json").write_text(
             json.dumps({"at": int(time.time()), "inline": len(inline), "event": event}))
-        return self.detail_page(pr, user, (
+        return (
             f"<div class='banner ok'><span>✓</span><div>Posted {len(inline)} comment(s) as "
             f"<code>{event}</code> under <code>{html.escape(user)}</code>."
             + (f" {len(orphans)} could not be anchored and went into the summary."
-               if orphans else "") + "</div></div>"))
+               if orphans else "") + "</div></div>")
 
     def do_approve(self, pr, user, form):
+        return self.detail_page(pr, user, self._approve_result(pr, user, form))
+
+    def _approve_result(self, pr, user, form):
         one = lambda k: (form.get(k) or [""])[0]  # noqa: E731
         rev = load_review(pr) or {}
         blockers = sev_counts(rev.get("comments", [])).get("blocker", 0)
         lgtm = blockers == 0 and rev.get("event") != "REQUEST_CHANGES"
         if not lgtm and not one("ack"):
-            return self.detail_page(pr, user, "<div class='banner warn'><span>⚠️</span><div>"
-                                              "This review is not LGTM — tick the "
-                                              "confirmation to approve anyway.</div></div>")
+            return ("<div class='banner warn'><span>⚠️</span><div>This review is not LGTM — tick "
+                    "the confirmation to approve anyway.</div></div>")
         msg = one("approve_body").strip() or "LGTM."
         tok = user_pat(user)
         if not tok:
-            return self.detail_page(pr, user, "<div class='banner err'><span>🚫</span><div>"
-                                              "Your stored GitHub token could not be read — "
-                                              "paste it again in <a href='/prbot/settings'>"
-                                              "settings</a>.</div></div>")
+            return ("<div class='banner err'><span>🚫</span><div>Your stored GitHub token could "
+                    "not be read — paste it again in <a href='/prbot/integrations'>settings</a>."
+                    "</div></div>")
         ok, why = can_approve(pr, user)
         if not ok:
-            return self.detail_page(pr, user, f"<div class='banner err'><span>🚫</span><div>"
-                                              f"{html.escape(why)}</div></div>")
+            return f"<div class='banner err'><span>🚫</span><div>{html.escape(why)}</div></div>"
         if DRY_RUN:
-            return self.detail_page(pr, user, (
+            return (
                 f"<div class='banner warn'><span>🧪</span><div><b>DRY RUN — not approved.</b>"
                 f"<br>Would submit an APPROVE review as <code>{html.escape(user)}</code> with "
-                f"body: <em>{html.escape(msg[:200])}</em></div></div>"))
+                f"body: <em>{html.escape(msg[:200])}</em></div></div>")
         r = gh(["api", "--method", "POST", f"repos/{REPO}/pulls/{pr}/reviews",
                 "-f", "event=APPROVE", "-f", f"body={msg}"], token=tok)
         if r.returncode != 0:
-            return self.detail_page(pr, user, f"<div class='banner err'><span>🔴</span><div>"
-                                              f"GitHub rejected it: <code>"
-                                              f"{html.escape(r.stderr[:400])}</code></div></div>")
+            return (f"<div class='banner err'><span>🔴</span><div>GitHub rejected it: <code>"
+                    f"{html.escape(r.stderr[:400])}</code></div></div>")
         ud = udir(pr, user)
         ud.mkdir(parents=True, exist_ok=True)
         (ud / "approved").write_text(json.dumps({"at": int(time.time()), "body": msg}))
-        return self.detail_page(pr, user, f"<div class='banner ok'><span>✅</span><div>Approved "
-                                          f"#{pr} as <code>{html.escape(user)}</code>."
-                                          f"</div></div>")
+        return (f"<div class='banner ok'><span>✅</span><div>Approved #{pr} as "
+                f"<code>{html.escape(user)}</code>.</div></div>")
 
 
 if __name__ == "__main__":

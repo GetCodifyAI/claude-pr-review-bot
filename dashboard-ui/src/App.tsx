@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, type Me } from "./api";
 import { Login } from "./Login";
+import { PrPage } from "./PrPage";
 import { Queue } from "./Queue";
 import { Sidebar } from "./Sidebar";
 import { useLocation } from "./router";
@@ -22,7 +23,7 @@ function Placeholder({ name }: { name: string }) {
 function Routed({ me }: { me: Me }) {
   const { path } = useLocation();
   if (path === "/") return <Queue me={me} />;
-  if (path.startsWith("/pr")) return <Placeholder name="Pull request" />;
+  if (path.startsWith("/pr")) return <PrPage me={me} />;
   if (path.startsWith("/qa")) return <Placeholder name="QA guide" />;
   if (path.startsWith("/skills")) return <Placeholder name="Review skills" />;
   if (path.startsWith("/integrations") || path.startsWith("/settings"))
