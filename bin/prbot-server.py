@@ -1282,6 +1282,9 @@ background:var(--grad);border-radius:2px}
 .cnt{background:var(--panel2);border-radius:999px;padding:1px 8px;font-size:.72rem;color:var(--dim)}
 .tab.on .cnt{background:rgba(168,85,247,.18);color:#cba6f7}
 .sortbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:16px 0 12px}
+.qtools{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin:14px 0 0}
+.qtools .sortbar{margin:0}
+#qsearch{flex:1;min-width:200px;max-width:380px;padding:9px 13px}
 .sortopt{font-size:.82rem;color:var(--dim);padding:5px 11px;border-radius:999px;
 border:1px solid transparent;transition:background .15s,color .15s}
 .sortopt:hover{color:var(--fg);background:var(--panel)}
@@ -1540,6 +1543,17 @@ function mdrender(src){
     if(list){html+='</ul>';list=false;}para.push(ln);}
   flush();if(list)html+='</ul>';
   return html||'<p class=muted>Nothing to preview.</p>';
+}
+function qfilter(){
+  var el=document.getElementById('qsearch');if(!el)return;
+  var q=(el.value||'').trim().toLowerCase();
+  var rows=document.querySelectorAll('#qlist .row'),shown=0;
+  rows.forEach(function(r){
+    var m=!q||r.textContent.toLowerCase().indexOf(q)>-1;
+    r.hidden=!m;if(m)shown++;
+  });
+  var none=document.getElementById('qnone');
+  if(none)none.hidden=!(q&&shown===0&&rows.length>0);
 }
 function copyQA(btn){
   var t=document.getElementById('qasrc');if(!t)return;
@@ -2828,12 +2842,17 @@ class Handler(BaseHTTPRequestHandler):
                 + strip
                 + f"<div class=tabs>{tabs}</div>"
                 + f"<div class=tabdesc>{TAB_DESC.get(tab, '')}</div>"
-                + f"<div class=sortbar><span class='muted sm'>Sort</span>{sorts}</div>"
-                + "<div class=list>"
+                + "<div class=qtools>"
+                + "<input id=qsearch class=in type=search autocomplete=off oninput='qfilter()' "
+                "placeholder='Search #number, title or author…'>"
+                + f"<div class=sortbar><span class='muted sm'>Sort</span>{sorts}</div></div>"
+                + "<div class=list id=qlist>"
                 + ("".join(rows) if rows else
                    f"<div class=empty><span class=ic>{empty[0]}</span>"
                    f"<b>{empty[1]}</b>{empty[2]}</div>")
-                + "</div>")
+                + "</div>"
+                + "<div id=qnone class=empty hidden><span class=ic>🔍</span><b>No matches</b>"
+                  "Nothing in this view matches your search.</div>")
         return self.reply(200, shell("Queue", body, user=user, active="queue"))
 
     def timeline(self, pr, user):
