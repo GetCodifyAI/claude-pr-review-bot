@@ -26,6 +26,9 @@ notify_fail() {
 }
 
 have_free_mem || fail "not enough free memory to start a review"
+# Reviews run on the clicker's OWN Claude account — never the shared box login. The dashboard
+# gates on this, so this is defence in depth.
+[ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] || fail "connect your Claude account in the dashboard to review"
 
 # Review effort — how deep the agent goes. The dashboard sets PRBOT_EFFORT (auto-sized from the
 # diff, human-overridable). It changes only two things: the timeout, and a depth instruction

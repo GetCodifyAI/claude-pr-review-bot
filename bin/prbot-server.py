@@ -496,10 +496,15 @@ def store_claude_token(login, data):
     modify_users(apply)
 
 
+def claude_connected(login):
+    """True if this user has connected their own Claude account. Reviews require this — nobody
+    runs on the shared box account, so nobody burns someone else's subscription."""
+    return bool((load_users().get(login) or {}).get("claude_token_enc"))
+
+
 def review_env(login):
-    """Environment for a review spawned by `login`: which account it bills to, and whose review
-    skill it uses. PRBOT_ACTOR is always the clicker (drives skill choice); PRBOT_RUN_AS is the
-    Claude account for display, only their own if they connected one."""
+    """Environment for a review spawned by `login`: it runs on THEIR Claude account (required —
+    see claude_connected). PRBOT_ACTOR is the clicker (drives skill choice)."""
     env = {**os.environ, "PRBOT_RUN_AS": "shared", "PRBOT_ACTOR": login or ""}
     tok = user_claude_token(login) if login else ""
     if tok:
@@ -1374,6 +1379,10 @@ box-shadow:0 0 0 1px #6a65ec inset}
 .runform textarea.in{min-height:52px;font-size:12.8px}
 .focuswrap{margin-bottom:14px}
 .runrow{display:flex;align-items:center;gap:12px}
+.claudegate{display:flex;gap:15px;align-items:flex-start;padding:4px 2px}
+.cg-ico{flex:none;width:44px;height:44px;border-radius:12px;background:#d97757;color:#fff;
+display:flex;align-items:center;justify-content:center}
+.cg-body b{font-size:1rem}.cg-body p{margin:5px 0 13px;max-width:52ch}
 .restorebox{margin-top:10px;border:0;background:transparent}
 .restorebox summary{padding:0;font-size:.82rem;font-weight:500;color:var(--dim)}
 .restorebox summary:hover{color:var(--fg)}
@@ -2490,7 +2499,8 @@ class Handler(BaseHTTPRequestHandler):
                           "Pings you when a review is requested.", slack_ctl, ok=has_slack)
 
         claude_card = card("claude", CLAUDE_ICON, "Claude", on if has_claude else req,
-                           "Reviews you start run on your own Claude account.",
+                           "<b>Required to review.</b> Reviews and QA guides run on your own "
+                           "Claude subscription — never a shared account.",
                            claude_inner, ok=has_claude) + claude_aux
 
         cards = github_card + slack_card + claude_card
@@ -3449,9 +3459,22 @@ class Handler(BaseHTTPRequestHandler):
                 f"<a class=btn href='{link('archive', pr)}'>Archive</a></p></div>")
 
     # -- actions -----------------------------------------------------------------------------
+    def connect_claude_gate(self, action="review"):
+        """Shown in place of a run form when the user hasn't connected their Claude account —
+        reviews run on their own subscription, so this is required (no shared fallback)."""
+        return (
+            "<div class=claudegate>"
+            f"<div class=cg-ico>{CLAUDE_ICON}</div>"
+            f"<div class=cg-body><b>Connect your Claude account to {action}</b>"
+            f"<p class='muted sm'>{action.capitalize()}s run on <b>your own</b> Claude "
+            "subscription — nothing runs on anyone else's plan. Connect once and you're set.</p>"
+            "<a class='btn primary' href='/prbot/integrations'>Connect Claude →</a></div></div>")
+
     def run_form(self, pr, user, meta, label="Run review"):
         """The one place a review is launched: choose effort, optionally say what to focus on,
-        then submit. Nothing runs until Start is clicked — the choice is deliberate, not a link."""
+        then submit. Requires a connected Claude account — nobody reviews on the shared box."""
+        if not claude_connected(user):
+            return self.connect_claude_gate("review")
         exp, sig = mint("review", pr, PAGE_TTL)
         suggested = autosize_effort(meta)
         radios = []
@@ -3546,6 +3569,8 @@ class Handler(BaseHTTPRequestHandler):
         """Queue one review (no redirect). Returns True if it actually spawned, False if a review
         was already running for that PR. Shared by start_review and the stack runner."""
         pr = str(pr)
+        if not claude_connected(user):
+            return False                            # reviews require the user's own Claude account
         d = STATE / pr
         d.mkdir(parents=True, exist_ok=True)
         touch_user(pr, user)
@@ -3623,10 +3648,11 @@ class Handler(BaseHTTPRequestHandler):
             "isn't already running. They run one at a time on the box.</span>"
             f"<button class='btn primary' type=submit>Review all {len(stack)}</button></div>"
             "</form>")
+        control = form if claude_connected(user) else self.connect_claude_gate("review")
         body = (head + "<p class=lead>These open PRs form a stack (each based on the one above). "
                 "Review the whole stack from here instead of triggering each separately.</p>"
                 f"<div class=list>{rows}</div>"
-                f"<div class='card top'>{form}</div>")
+                f"<div class='card top'>{control}</div>")
         return self.reply(200, shell(f"#{pr} · stack", body, user=user, active="queue"))
 
     def run_stack(self, pr, user, effort):
@@ -3641,6 +3667,8 @@ class Handler(BaseHTTPRequestHandler):
     def start_qa(self, pr, user):
         d = STATE / pr
         d.mkdir(parents=True, exist_ok=True)
+        if not claude_connected(user):              # QA runs Claude too — needs their own account
+            return self.redirect(f"/prbot/qa?pr={pr}")
         if not qa_running(pr):
             (d / "qa.status").write_text("queued")
             env = review_env(user)              # runs on the clicker's Claude account if connected
@@ -3684,8 +3712,11 @@ class Handler(BaseHTTPRequestHandler):
         title = meta.get("title", f"PR #{pr}")
         ghurl = meta.get("url", f"https://github.com/{REPO}/pull/{pr}")
         st = qa_state(pr)
+        connected = claude_connected(user)
         exp_g, sig_g = mint("qa", pr, PAGE_TTL)
         genlink = f"/prbot/qa/gen?pr={pr}&exp={exp_g}&sig={sig_g}"
+        gen_btn = (lambda lbl: f"<a class='btn primary' href='{genlink}'>{lbl}</a>") if connected \
+            else (lambda lbl: self.connect_claude_gate("generate a QA guide"))
         head = (f"<nav class=bc><a href='/prbot/qa'>QA guides</a><span class=sep>/</span>"
                 f"<span class=cur>#{pr}</span></nav>"
                 f"<h1 class=prtitle>#{pr} — {html.escape(title)}</h1>"
@@ -3724,16 +3755,15 @@ class Handler(BaseHTTPRequestHandler):
             note = ("<div class='banner warn'><span>🛑</span><div><b>Stopped.</b> Generate a new "
                     "guide below.</div></div>" if st == "stopped" else
                     f"<div class='banner err'><span>🔴</span><div>{html.escape(s)}</div></div>")
-            gen = (f"<div class='card top'><a class='btn primary' href='{genlink}'>Generate QA "
-                   f"guide</a></div>")
+            gen = f"<div class='card top'>{gen_btn('Generate QA guide')}</div>"
             return self.reply(200, shell(f"QA #{pr}", head + note + gen, user=user, active="qa"))
 
         if st == "done":
             md = load_qa(pr)
+            regen = (f"<a class='btn soft' href='{genlink}'>Regenerate</a>" if connected else "")
             copy = ("<div class=qabar><span class='muted sm'>Guide ready — hand it to QA.</span>"
-                    "<span class=spacer></span>"
-                    f"<a class='btn soft' href='{genlink}'>Regenerate</a>"
-                    "<button type=button class='btn primary' onclick='copyQA(this)' "
+                    "<span class=spacer></span>" + regen
+                    + "<button type=button class='btn primary' onclick='copyQA(this)' "
                     "data-done='Copied ✓'>Copy guide</button></div>")
             body = (head + copy
                     + f"<div class=card><div class=qaguide>{render_qa(md)}</div></div>"
@@ -3744,7 +3774,7 @@ class Handler(BaseHTTPRequestHandler):
         gen = ("<div class='card top'><h4 style='margin-top:0'>No guide yet</h4>"
                "<p class='muted sm'>Build a tester-ready QA guide from this PR's diff, review "
                "threads and history.</p>"
-               f"<a class='btn primary' href='{genlink}'>Generate QA guide</a></div>")
+               f"{gen_btn('Generate QA guide')}</div>")
         return self.reply(200, shell(f"QA #{pr}", head + gen, user=user, active="qa"))
 
     def do_post_comments(self, pr, user, form):

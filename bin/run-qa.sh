@@ -21,6 +21,7 @@ status() { echo "$1" > "$DIR/qa.status"; echo "[QA #$PR] $1"; }
 fail() { status "failed: $1"; exit 1; }
 
 have_free_mem || fail "not enough free memory to start"
+[ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] || fail "connect your Claude account in the dashboard to generate a QA guide"
 
 status "fetching the PR"
 meta=$(gh pr view "$PR" --repo "$REPO" \
