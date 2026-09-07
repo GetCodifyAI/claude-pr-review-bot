@@ -9,9 +9,6 @@
     "test": "node --import tsx --test src/*.test.ts",
     "test:browser": "playwright test"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
-  },
   "dependencies": {
     "react": "19.1.1",
     "react-dom": "19.1.1",

@@ -1,2 +1,8 @@
-allowBuilds:
-  esbuild: set this to true or false
+# esbuild (present at two versions — direct, and via tsx) declares a postinstall build script.
+# pnpm 10+ blocks unapproved build scripts and exits non-zero (ERR_PNPM_IGNORED_BUILDS), which
+# would abort bootstrap's `pnpm install --frozen-lockfile` on the box. `onlyBuiltDependencies:
+# [esbuild]` is read but does not clear the error when the package is present at two versions
+# (a pnpm quirk), so allow all build scripts. The dependency set here is small and reputable
+# (react, esbuild, tsx, typescript, @playwright/test, react-markdown, remark-gfm) and only
+# esbuild actually has a build script.
+dangerouslyAllowAllBuilds: true
