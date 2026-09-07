@@ -63,4 +63,29 @@ test.describe("signed in", () => {
     await expect(page).toHaveURL(/\/integrations/);
     await expect(page.getByRole("heading", { name: /integrations/i })).toBeVisible();
   });
+
+  test("command palette (\u2318K) reviews a PR by number", async ({ page }) => {
+    await page.goto("/prbot/");
+    await page.keyboard.press("ControlOrMeta+k");
+    await expect(page.locator(".cmdk")).toBeVisible();
+    await page.locator(".cmdk-in").fill(PR);
+    await expect(page.getByText(`Review PR #${PR}`)).toBeVisible();
+    await page.locator(".cmdk-in").press("Enter");
+    await expect(page).toHaveURL(new RegExp(`/pr\\?pr=${PR}`));
+  });
+
+  test("the Review a PR button opens the palette", async ({ page }) => {
+    await page.goto("/prbot/");
+    await page.getByRole("button", { name: /review a pr/i }).click();
+    await expect(page.locator(".cmdk")).toBeVisible();
+  });
+
+  test("How it works is under Help, not the primary nav", async ({ page }) => {
+    await page.goto("/prbot/");
+    await expect(page.locator("nav.nav").getByText(/how it works/i)).toHaveCount(0);
+    await page.getByRole("button", { name: /help/i }).click();
+    await page.getByRole("link", { name: /how it works/i }).click();
+    await expect(page).toHaveURL(/\/how/);
+    await expect(page.getByRole("heading", { name: /how robin works/i })).toBeVisible();
+  });
 });

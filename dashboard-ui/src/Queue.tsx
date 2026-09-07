@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, type Me, type QueueData, type QueueRow } from "./api";
-import { Link, navigate, useLocation } from "./router";
+import { Link, useLocation } from "./router";
 
 const SORTS: [string, string][] = [
   ["newest", "Newest"],
@@ -17,12 +17,6 @@ const EMPTY: Record<string, [string, string, string]> = {
   archived: ["🗂️", "No archived PRs", "Archived PRs are hidden from your working set."],
 };
 
-function prnum(s: string): string {
-  const u = s.match(/\/pull\/(\d+)/);
-  if (u) return u[1];
-  const n = s.trim().replace(/^#/, "");
-  return /^\d{1,7}$/.test(n) ? n : "";
-}
 
 function Row({ row }: { row: QueueRow }) {
   return (
@@ -75,7 +69,6 @@ export function Queue({ me }: { me: Me }) {
     };
   }, [tab, sort]);
 
-  const jump = prnum(q);
   const filtered = useMemo(() => {
     if (!data) return [];
     const needle = q.trim().toLowerCase();
@@ -142,12 +135,9 @@ export function Queue({ me }: { me: Me }) {
           className="in"
           type="search"
           autoComplete="off"
-          placeholder="Search, or paste a PR number / URL to review any PR…"
+          placeholder="Filter your queue…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && jump) navigate(`/pr?pr=${jump}`);
-          }}
         />
         <div className="sortbar">
           <span className="muted sm">Sort</span>
@@ -159,11 +149,6 @@ export function Queue({ me }: { me: Me }) {
         </div>
       </div>
 
-      {jump && (
-        <Link className="qjump" to={`/pr?pr=${jump}`}>
-          → Open &amp; review PR #{jump}
-        </Link>
-      )}
 
       {filtered.length > 0 ? (
         <div className="list" id="qlist" data-tour="queuelist">

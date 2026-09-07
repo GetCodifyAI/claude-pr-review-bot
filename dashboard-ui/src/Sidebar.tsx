@@ -1,15 +1,28 @@
+import { useEffect, useRef, useState } from "react";
 import type { Me } from "./api";
+import { openPalette } from "./CommandPalette";
 import { NavIcon } from "./icons";
 import { Link, useLocation } from "./router";
 import { startTour } from "./Tour";
 
-const NAV: [string, string, string][] = [
-  ["queue", "Queue", "/"],
-  ["qa", "QA guide", "/qa"],
-  ["learnings", "Learnings", "/learnings"],
-  ["skills", "Skills", "/skills"],
-  ["integrations", "Integrations", "/integrations"],
-  ["how", "How it works", "/how"],
+// Two groups: WORK (what you do day to day) and SETUP (configure once). "How it works" is no
+// longer a primary nav item — it lives behind the footer Help menu.
+const GROUPS: { label: string; items: [string, string, string][] }[] = [
+  {
+    label: "Work",
+    items: [
+      ["queue", "Queue", "/"],
+      ["qa", "QA guides", "/qa"],
+      ["learnings", "Learnings", "/learnings"],
+    ],
+  },
+  {
+    label: "Setup",
+    items: [
+      ["skills", "Skills", "/skills"],
+      ["integrations", "Integrations", "/integrations"],
+    ],
+  },
 ];
 
 function activeKey(path: string): string {
@@ -18,9 +31,45 @@ function activeKey(path: string): string {
   if (path.startsWith("/learnings")) return "learnings";
   if (path.startsWith("/skills")) return "skills";
   if (path.startsWith("/integrations") || path.startsWith("/settings")) return "integrations";
-  if (path.startsWith("/how")) return "how";
   if (path.startsWith("/pr") || path.startsWith("/stack")) return "queue";
-  return "queue";
+  return "";
+}
+
+function HelpMenu() {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [open]);
+  return (
+    <div className="helpwrap" ref={ref}>
+      <button className="so" type="button" onClick={() => setOpen((o) => !o)}>
+        ? Help
+      </button>
+      {open && (
+        <div className="helpmenu" role="menu">
+          <Link className="helpitem" to="/how" onClick={() => setOpen(false)}>
+            How it works
+          </Link>
+          <button
+            className="helpitem"
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              startTour();
+            }}
+          >
+            Take a tour
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function Sidebar({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
@@ -30,17 +79,29 @@ export function Sidebar({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
   return (
     <aside className="side">
       <Link className="brand" to="/">
-        <img src="https://github.com/favicon.ico" alt="" style={{ display: "none" }} />
         <span className="n">{me.brand}</span>
       </Link>
+
+      <button className="reviewbtn" type="button" onClick={openPalette}>
+        <span className="rb-ico">✨</span>
+        <span className="rb-label">Review a PR</span>
+        <kbd className="rb-kbd">⌘K</kbd>
+      </button>
+
       <nav className="nav">
-        {NAV.map(([k, label, to]) => (
-          <Link key={k} to={to} className={"ni" + (active === k ? " on" : "")} data-tour={k}>
-            {NavIcon[k]}
-            <span>{label}</span>
-          </Link>
+        {GROUPS.map((g) => (
+          <div className="navgroup" key={g.label}>
+            <div className="navlabel">{g.label}</div>
+            {g.items.map(([k, label, to]) => (
+              <Link key={k} to={to} className={"ni" + (active === k ? " on" : "")} data-tour={k}>
+                {NavIcon[k]}
+                <span>{label}</span>
+              </Link>
+            ))}
+          </div>
         ))}
       </nav>
+
       <div className="sidefoot">
         <span className={"live " + (me.dry_run ? "dry" : "on")}>{me.dry_run ? "dry run" : "live"}</span>
         <div className="who">
@@ -53,12 +114,10 @@ export function Sidebar({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
           </div>
         </div>
         <div className="foota">
-          <a className="so" href="#" onClick={(e) => { e.preventDefault(); startTour(); }}>
-            Take a tour
-          </a>
-          <a className="so" href="#" onClick={(e) => { e.preventDefault(); onSignOut(); }}>
+          <HelpMenu />
+          <button className="so" type="button" onClick={onSignOut}>
             Sign out
-          </a>
+          </button>
         </div>
       </div>
     </aside>

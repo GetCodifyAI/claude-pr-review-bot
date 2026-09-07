@@ -3,6 +3,7 @@ import { api, type Me } from "./api";
 import { Login } from "./Login";
 import { PrPage } from "./PrPage";
 import { Qa } from "./Qa";
+import { CommandPalette } from "./CommandPalette";
 import { HowItWorks } from "./HowItWorks";
 import { Integrations } from "./Integrations";
 import { Learnings } from "./Learnings";
@@ -62,6 +63,7 @@ export function App() {
           <Routed me={me} />
         </div>
       </main>
+      <CommandPalette />
       <Tour />
     </div>
   );
