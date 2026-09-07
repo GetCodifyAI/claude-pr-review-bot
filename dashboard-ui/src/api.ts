@@ -176,6 +176,44 @@ export interface BannerResult {
   bannerHtml: string;
 }
 
+export interface QaGuide { num: string; title: string; when: string }
+export interface QaIndex { guides: QaGuide[] }
+export interface QaDetail {
+  pr: string;
+  title: string;
+  ghUrl: string;
+  state: string;
+  connected: boolean;
+  genToken: Token;
+  stopToken?: Token;
+  md?: string;
+  failed?: string;
+  stopped?: boolean;
+  running?: { phases: string[]; cur: number; queued: boolean };
+}
+
+export interface SkillStat {
+  skill: string;
+  kept: number;
+  edited: number;
+  dropped: number;
+  total: number;
+  rate: number;
+}
+export interface DepthInfo { name: string; meta: string; content: string; edited: boolean }
+export interface SkillsData {
+  token: Token;
+  user: string;
+  choice: "own" | "team";
+  effLabel: string;
+  hasMySkill: boolean;
+  hasGlobal: boolean;
+  teamSkill: string;
+  mySkill: string;
+  depths: Record<string, DepthInfo>;
+  stats: SkillStat[];
+}
+
 export const api = {
   me: () => get<Me>("/me"),
   queue: (tab: string, sort: string) =>
@@ -196,4 +234,11 @@ export const api = {
   ) => post<BannerResult>("/post", { pr, ...t, ...payload }),
   approve: (pr: string, t: Token, body: string, ack: boolean) =>
     post<BannerResult>("/approve", { pr, ...t, body, ack }),
+  qaIndex: () => get<QaIndex>("/qa"),
+  qaDetail: (pr: string) => get<QaDetail>(`/qa?pr=${pr}`),
+  qaGen: (pr: string, t: Token) => post<{ ok: boolean }>("/qa/gen", { pr, ...t }),
+  qaStop: (pr: string, t: Token) => post<{ ok: boolean }>("/qa/stop", { pr, ...t }),
+  skills: () => get<SkillsData>("/skills"),
+  skillAction: (step: string, payload: Record<string, unknown>) =>
+    post<BannerResult>(`/skill/${step}`, payload),
 };

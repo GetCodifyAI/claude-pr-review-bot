@@ -2,8 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { api, type Me } from "./api";
 import { Login } from "./Login";
 import { PrPage } from "./PrPage";
+import { Qa } from "./Qa";
 import { Queue } from "./Queue";
 import { Sidebar } from "./Sidebar";
+import { Skills } from "./Skills";
 import { useLocation } from "./router";
 
 function Placeholder({ name }: { name: string }) {
@@ -24,8 +26,8 @@ function Routed({ me }: { me: Me }) {
   const { path } = useLocation();
   if (path === "/") return <Queue me={me} />;
   if (path.startsWith("/pr")) return <PrPage me={me} />;
-  if (path.startsWith("/qa")) return <Placeholder name="QA guide" />;
-  if (path.startsWith("/skills")) return <Placeholder name="Review skills" />;
+  if (path.startsWith("/qa")) return <Qa />;
+  if (path.startsWith("/skills")) return <Skills />;
   if (path.startsWith("/integrations") || path.startsWith("/settings"))
     return <Placeholder name="Integrations" />;
   if (path.startsWith("/learnings")) return <Placeholder name="Learnings" />;

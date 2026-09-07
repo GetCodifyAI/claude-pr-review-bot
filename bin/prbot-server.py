@@ -2441,6 +2441,12 @@ class Handler(BaseHTTPRequestHandler):
             if not pr.isdigit():
                 return self.api_json({"error": "missing pr"}, 400)
             return self.api_json(self.api_pr(pr, user, (q.get("v") or [""])[0]))
+        if route == "/api/qa":
+            pr = (q.get("pr") or [""])[0]
+            return self.api_json(self.api_qa_detail(pr, user) if pr.isdigit()
+                                 else self.api_qa_index(user))
+        if route == "/api/skills":
+            return self.api_json(self.api_skills(user))
         return self.api_json({"error": "not found"}, 404)
 
     def _run_form_data(self, user, meta):
@@ -2582,6 +2588,47 @@ class Handler(BaseHTTPRequestHandler):
                                "blockers": blockers, "defaultMsg": default_approve_msg(rev)}
         return data
 
+    def api_qa_index(self, user):
+        return {"guides": [{"num": g["num"], "title": g["title"],
+                            "when": f"{fmt_date(g['at'])} ({ago(g['at'])})"} for g in qa_list()]}
+
+    def api_qa_detail(self, pr, user):
+        st = qa_state(pr)
+        meta = qa_meta(pr)
+        out = {"pr": pr, "title": meta.get("title", f"PR #{pr}"),
+               "ghUrl": meta.get("url", f"https://github.com/{REPO}/pull/{pr}"),
+               "state": st, "connected": claude_connected(user),
+               "genToken": self._tok("qa", pr, PAGE_TTL)}
+        if st == "running":
+            s = qa_status_text(pr).lower()
+            out["running"] = {"phases": ["Fetching the PR", "Checking out the branch",
+                                         "Building the QA guide"],
+                              "cur": (0 if "fetch" in s else
+                                      1 if ("checking out" in s or "queued" in s) else 2),
+                              "queued": "queued" in s}
+            out["stopToken"] = self._tok("qastop", pr)
+        elif st == "failed":
+            out["failed"] = qa_status_text(pr)
+        elif st == "stopped":
+            out["stopped"] = True
+        elif st == "done":
+            out["md"] = load_qa(pr)
+        return out
+
+    def api_skills(self, user):
+        exp, sig = mint("settings", user, ACTION_TTL)
+        choice, eff_lbl = effective_skill(user)
+        return {
+            "token": {"exp": exp, "sig": sig},
+            "user": user, "choice": choice, "effLabel": eff_lbl,
+            "hasMySkill": bool(read_skill(user)), "hasGlobal": bool(read_skill("global")),
+            "teamSkill": read_skill("global"), "mySkill": read_skill(user),
+            "depths": {lv: {"name": EFFORT[lv][0], "meta": EFFORT[lv][1],
+                            "content": effort_depth(lv), "edited": effort_edited(lv)}
+                       for lv in EFFORT_ORDER},
+            "stats": prbot_learn.skill_stats(),
+        }
+
     def api_me(self, user):
         if not user:
             return {"authed": False, "brand": BRAND, "repo": REPO, "dry_run": DRY_RUN,
@@ -2675,6 +2722,15 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/logout":
             return self.api_json({"ok": True}, cookie=clear_session_cookie())
 
+        # Skill / effort-depth edits — settings token, no PR.
+        if route.startswith("/api/skill/"):
+            step = route.rsplit("/", 1)[1]
+            if err := verify("settings", user, str(body.get("exp") or ""),
+                             str(body.get("sig") or "")):
+                return self.api_json({"error": err}, 403)
+            form = {k: [str(v)] for k, v in body.items()}
+            return self.api_json({"bannerHtml": self._skill_result(user, step, form)})
+
         # PR-scoped actions — all gated by the signed token in the body (same model as the forms).
         pr = str(body.get("pr") or "")
         exp, sig = str(body.get("exp") or ""), str(body.get("sig") or "")
@@ -2693,6 +2749,15 @@ class Handler(BaseHTTPRequestHandler):
             if err := gate("stop"):
                 return self.api_json({"error": err}, 403)
             return self.api_json({"ok": True, "confirmed": stop_review(pr, user)})
+        if route == "/api/qa/gen":
+            if err := gate("qa"):
+                return self.api_json({"error": err}, 403)
+            self._spawn_qa(pr, user)
+            return self.api_json({"ok": True})
+        if route == "/api/qa/stop":
+            if err := gate("qastop"):
+                return self.api_json({"error": err}, 403)
+            return self.api_json({"ok": True, "confirmed": stop_qa(pr, user)})
         if route == "/api/markdone":
             if err := gate("markdone"):
                 return self.api_json({"error": err}, 403)
@@ -3145,14 +3210,20 @@ class Handler(BaseHTTPRequestHandler):
         one = lambda k: (form.get(k) or [""])[0]  # noqa: E731
         if err := verify("settings", user, one("exp"), one("sig")):
             return self.deny(err)
+        banner = self._skill_result(user, step, form)
+        if one("from") == "skills":
+            return self.skills_page(user, banner)
+        return self.settings_page(user, banner)
+
+    def _skill_result(self, user, step, form):
+        """Apply a skill/effort-depth edit and return a banner HTML string (reused by the HTML
+        page and the JSON API). Assumes the settings token is already verified."""
+        one = lambda k: (form.get(k) or [""])[0]  # noqa: E731
         # Which skill this edits: the team default (shared) or the user's own.
         target = "global" if one("target") == "global" else user
         who = ("the team default skill" if target == "global" else "your skill")
-        # Return to the page the form came from.
-        back = ((lambda b="": self.skills_page(user, b)) if one("from") == "skills"
-                else (lambda b="": self.settings_page(user, b)))
-        err_b = lambda m: back(f"<div class='banner err'><span>🚫</span><div>{m}</div></div>")  # noqa
-        ok = lambda m: back(f"<div class='banner ok'><span>✓</span><div>{m}</div></div>")  # noqa
+        err_b = lambda m: f"<div class='banner err'><span>🚫</span><div>{m}</div></div>"  # noqa
+        ok = lambda m: f"<div class='banner ok'><span>✓</span><div>{m}</div></div>"  # noqa
 
         # Review-depth instructions (Quick/Standard/Deep) — shared, editable, with reset-to-default.
         tgt = one("target")
@@ -4137,18 +4208,23 @@ class Handler(BaseHTTPRequestHandler):
         return self.redirect(f"/prbot/stack?pr={pr}")
 
     # --- QA guides ---------------------------------------------------------------------------
-    def start_qa(self, pr, user):
+    def _spawn_qa(self, pr, user):
+        if not claude_connected(user):              # QA runs Claude too — needs their own account
+            return False
         d = STATE / pr
         d.mkdir(parents=True, exist_ok=True)
-        if not claude_connected(user):              # QA runs Claude too — needs their own account
-            return self.redirect(f"/prbot/qa?pr={pr}")
-        if not qa_running(pr):
-            (d / "qa.status").write_text("queued")
-            env = review_env(user)              # runs on the clicker's Claude account if connected
-            with open(d / "qa.log", "ab") as log:
-                proc = subprocess.Popen([str(BIN / "run-qa.sh"), pr], stdout=log,
-                                        stderr=subprocess.STDOUT, start_new_session=True, env=env)
-            (d / "qa.pid").write_text(str(proc.pid))
+        if qa_running(pr):
+            return False
+        (d / "qa.status").write_text("queued")
+        env = review_env(user)                  # runs on the clicker's Claude account
+        with open(d / "qa.log", "ab") as log:
+            proc = subprocess.Popen([str(BIN / "run-qa.sh"), pr], stdout=log,
+                                    stderr=subprocess.STDOUT, start_new_session=True, env=env)
+        (d / "qa.pid").write_text(str(proc.pid))
+        return True
+
+    def start_qa(self, pr, user):
+        self._spawn_qa(pr, user)
         return self.redirect(f"/prbot/qa?pr={pr}")
 
     def qa_index(self, user):
