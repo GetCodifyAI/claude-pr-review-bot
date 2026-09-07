@@ -1030,14 +1030,28 @@ def session_sig(login, exp):
     return hmac.new(SECRET.encode(), f"session:{login}:{exp}".encode(), sha256).hexdigest()
 
 
-def session_cookie(login):
+PRBOT_DOMAIN = ENV.get("PRBOT_DOMAIN", "staging.eng.cutanddry.com")
+
+
+def _cookie_domain(host):
+    """Scope the session cookie to the shared parent domain when we're on a real staging host, so
+    one login works across robin-<env> and prbot-<env> (same box, same secret). Host-only on
+    localhost/127.0.0.1 (tests) — a Domain that doesn't match the host is dropped by the browser."""
+    h = (host or "").split(":")[0]
+    if PRBOT_DOMAIN and (h == PRBOT_DOMAIN or h.endswith("." + PRBOT_DOMAIN)):
+        return f"Domain=.{PRBOT_DOMAIN}; "
+    return ""
+
+
+def session_cookie(login, host=""):
     exp = int(time.time()) + SESSION_TTL
-    return (f"prbot_s={login}:{exp}:{session_sig(login, exp)}; Path=/prbot; "
+    return (f"prbot_s={login}:{exp}:{session_sig(login, exp)}; {_cookie_domain(host)}Path=/prbot; "
             f"Max-Age={SESSION_TTL}; HttpOnly; Secure; SameSite=Lax")
 
 
-def clear_session_cookie():
-    return "prbot_s=; Path=/prbot; Max-Age=0; HttpOnly; Secure; SameSite=Lax"
+def clear_session_cookie(host=""):
+    return (f"prbot_s=; {_cookie_domain(host)}Path=/prbot; Max-Age=0; HttpOnly; Secure; "
+            "SameSite=Lax")
 
 
 def session_user(headers):
@@ -1606,7 +1620,8 @@ class Handler(BaseHTTPRequestHandler):
         if route.startswith("/api/"):
             return self.api_get(route, q)
         if route == "/logout":
-            return self.redirect("/prbot/login", cookie=clear_session_cookie())
+            return self.redirect("/prbot/login",
+                                 cookie=clear_session_cookie(self.headers.get("Host", "")))
         if route == "/oauth/start":
             if not OAUTH_ENABLED:
                 return self.redirect("/prbot/login?err=" + quote(
@@ -1982,12 +1997,13 @@ class Handler(BaseHTTPRequestHandler):
                 users[login] = u
             modify_users(apply)
             print(f"login (api): {login}", flush=True)
-            return self.api_json({"ok": True, "login": login}, cookie=session_cookie(login))
+            return self.api_json({"ok": True, "login": login},
+                                 cookie=session_cookie(login, self.headers.get("Host", "")))
         user = session_user(self.headers)
         if not user:
             return self.api_json({"error": "unauthorized"}, 401)
         if route == "/api/logout":
-            return self.api_json({"ok": True}, cookie=clear_session_cookie())
+            return self.api_json({"ok": True}, cookie=clear_session_cookie(self.headers.get("Host", "")))
 
         # Settings-token actions with no PR: skills, integrations settings, Claude connect.
         def settings_gate():
@@ -2148,7 +2164,7 @@ class Handler(BaseHTTPRequestHandler):
         print(f"login (github): {login}", flush=True)
         if not prev.get("slack_id"):
             nxt = "/prbot/integrations?welcome=1&next=" + quote(nxt, safe="")
-        return self.redirect(nxt, cookie=session_cookie(login))
+        return self.redirect(nxt, cookie=session_cookie(login, self.headers.get("Host", "")))
 
     def _claude_result(self, user, step, form):
         """Claude connect steps (cancel/disconnect/code) → banner HTML. Settings token assumed
