@@ -8,7 +8,14 @@ const NEW_TOKEN =
 export function Login({ me, onDone }: { me: Me; onDone: () => void }) {
   const [pat, setPat] = useState("");
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
+  // Seed from ?err= so an OAuth failure (redirected here by the server) is shown.
+  const [err, setErr] = useState(() => {
+    try {
+      return new URLSearchParams(window.location.search).get("err") || "";
+    } catch {
+      return "";
+    }
+  });
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
