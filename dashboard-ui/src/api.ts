@@ -214,6 +214,52 @@ export interface SkillsData {
   stats: SkillStat[];
 }
 
+
+export interface IntegrationsData {
+  token: Token;
+  github: { login: string };
+  slack: { id: string };
+  claude: { connected: boolean; authUrl: string };
+  oauth: boolean;
+  brand: string;
+}
+
+export interface LearningRow {
+  kind: string;
+  label: string;
+  loc: string;
+  severity: string;
+  gist: string;
+  editedGist: string;
+}
+export interface LearningsData {
+  counts: { dropped: number; edited: number; kept: number };
+  rows: LearningRow[];
+}
+
+export interface StackItem {
+  num: string;
+  title: string;
+  base: string;
+  head: string;
+  state: string;
+}
+export interface StackData {
+  pr: string;
+  isStack: boolean;
+  connected: boolean;
+  runToken: Token;
+  levels: EffortLevel[];
+  stack: StackItem[];
+}
+
+export interface HowData {
+  images: Record<string, string>;
+  brand: string;
+  reviewer: string;
+  tabs: { key: string; label: string; desc: string }[];
+}
+
 export const api = {
   me: () => get<Me>("/me"),
   queue: (tab: string, sort: string) =>
@@ -241,4 +287,18 @@ export const api = {
   skills: () => get<SkillsData>("/skills"),
   skillAction: (step: string, payload: Record<string, unknown>) =>
     post<BannerResult>(`/skill/${step}`, payload),
+  integrations: () => get<IntegrationsData>("/integrations"),
+  saveSettings: (t: Token, fields: { slack_id?: string; pat?: string }) =>
+    post<BannerResult>("/settings", { ...t, ...fields }),
+  claudeCode: (t: Token, code: string) =>
+    post<BannerResult & { connected: boolean }>("/claude/code", { ...t, code }),
+  claudeDisconnect: (t: Token) =>
+    post<BannerResult & { connected: boolean }>("/claude/disconnect", { ...t }),
+  claudeCancel: (t: Token) =>
+    post<BannerResult & { connected: boolean }>("/claude/cancel", { ...t }),
+  learnings: () => get<LearningsData>("/learnings"),
+  stack: (pr: string) => get<StackData>(`/stack?pr=${pr}`),
+  stackRun: (pr: string, t: Token, effort: string) =>
+    post<{ ok: boolean; started: number }>("/stack/run", { pr, ...t, effort }),
+  how: () => get<HowData>("/how"),
 };

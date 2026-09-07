@@ -1,6 +1,7 @@
 import type { Me } from "./api";
 import { NavIcon } from "./icons";
 import { Link, useLocation } from "./router";
+import { startTour } from "./Tour";
 
 const NAV: [string, string, string][] = [
   ["queue", "Queue", "/"],
@@ -52,7 +53,12 @@ export function Sidebar({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
           </div>
         </div>
         <div className="foota">
-          <a className="so" href="#" onClick={(e) => { e.preventDefault(); onSignOut(); }}>Sign out</a>
+          <a className="so" href="#" onClick={(e) => { e.preventDefault(); startTour(); }}>
+            Take a tour
+          </a>
+          <a className="so" href="#" onClick={(e) => { e.preventDefault(); onSignOut(); }}>
+            Sign out
+          </a>
         </div>
       </div>
     </aside>

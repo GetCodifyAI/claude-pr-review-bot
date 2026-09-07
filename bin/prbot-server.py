@@ -2447,6 +2447,20 @@ class Handler(BaseHTTPRequestHandler):
                                  else self.api_qa_index(user))
         if route == "/api/skills":
             return self.api_json(self.api_skills(user))
+        if route == "/api/integrations":
+            return self.api_json(self.api_integrations(user))
+        if route == "/api/learnings":
+            return self.api_json(self.api_learnings(user))
+        if route == "/api/how":
+            return self.api_json({"images": prbot_howimg.IMG, "brand": BRAND,
+                                  "reviewer": REVIEWER, "tabs": [{"key": k, "label": lbl,
+                                                                  "desc": TAB_DESC.get(k, "")}
+                                                                 for k, lbl in TABS if k != "all"]})
+        if route == "/api/stack":
+            pr = (q.get("pr") or [""])[0]
+            if not pr.isdigit():
+                return self.api_json({"error": "missing pr"}, 400)
+            return self.api_json(self.api_stack(pr, user))
         return self.api_json({"error": "not found"}, 404)
 
     def _run_form_data(self, user, meta):
@@ -2629,6 +2643,42 @@ class Handler(BaseHTTPRequestHandler):
             "stats": prbot_learn.skill_stats(),
         }
 
+    def api_integrations(self, user):
+        u = load_users().get(user) or {}
+        exp, sig = mint("settings", user, ACTION_TTL)
+        connected = bool(u.get("claude_token_enc"))
+        claude_url = ""
+        if not connected:
+            claude_url, _ = claude_connect_start(user)
+        return {"token": {"exp": exp, "sig": sig},
+                "github": {"login": user},
+                "slack": {"id": u.get("slack_id", "")},
+                "claude": {"connected": connected, "authUrl": claude_url or ""},
+                "oauth": OAUTH_ENABLED, "brand": BRAND}
+
+    def api_learnings(self, user):
+        pk = {"dropped": "blocker", "edited": "should-fix", "kept": "posted"}
+        pl = {"dropped": "dropped", "edited": "reworded", "kept": "kept"}
+
+        def item(r):
+            o = r.get("outcome")
+            return {"kind": pk.get(o, "archived"), "label": pl.get(o, o or ""),
+                    "loc": r.get("path", "") + (f":{r['line']}" if r.get("line") else ""),
+                    "severity": r.get("severity", "nit"), "gist": r.get("gist", ""),
+                    "editedGist": r.get("edited_gist", "") if o == "edited" else ""}
+        return {"counts": prbot_learn.counts(), "rows": [item(r) for r in prbot_learn.recent(80)]}
+
+    def api_stack(self, pr, user):
+        stack = pr_stack(pr)
+        exp, sig = mint("stackrun", pr, PAGE_TTL)
+        return {"pr": pr, "isStack": len(stack) > 1, "connected": claude_connected(user),
+                "runToken": {"exp": exp, "sig": sig},
+                "levels": [{"key": k, "name": EFFORT[k][0], "sub": EFFORT[k][1]}
+                           for k in EFFORT_ORDER],
+                "stack": [{"num": str(it["number"]), "title": it.get("title", ""),
+                           "base": it.get("baseRefName", ""), "head": it.get("headRefName", ""),
+                           "state": pr_state(str(it["number"]), user)} for it in stack]}
+
     def api_me(self, user):
         if not user:
             return {"authed": False, "brand": BRAND, "repo": REPO, "dry_run": DRY_RUN,
@@ -2722,14 +2772,28 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/logout":
             return self.api_json({"ok": True}, cookie=clear_session_cookie())
 
-        # Skill / effort-depth edits — settings token, no PR.
+        # Settings-token actions with no PR: skills, integrations settings, Claude connect.
+        def settings_gate():
+            return verify("settings", user, str(body.get("exp") or ""), str(body.get("sig") or ""))
+
         if route.startswith("/api/skill/"):
             step = route.rsplit("/", 1)[1]
-            if err := verify("settings", user, str(body.get("exp") or ""),
-                             str(body.get("sig") or "")):
+            if err := settings_gate():
                 return self.api_json({"error": err}, 403)
             form = {k: [str(v)] for k, v in body.items()}
             return self.api_json({"bannerHtml": self._skill_result(user, step, form)})
+        if route == "/api/settings":
+            if err := settings_gate():
+                return self.api_json({"error": err}, 403)
+            form = {k: [str(v)] for k, v in body.items()}
+            return self.api_json({"bannerHtml": self._settings_result(user, form)})
+        if route.startswith("/api/claude/"):
+            step = route.rsplit("/", 1)[1]
+            if err := settings_gate():
+                return self.api_json({"error": err}, 403)
+            form = {k: [str(v)] for k, v in body.items()}
+            banner = self._claude_result(user, step, form)
+            return self.api_json({"bannerHtml": banner, "connected": claude_connected(user)})
 
         # PR-scoped actions — all gated by the signed token in the body (same model as the forms).
         pr = str(body.get("pr") or "")
@@ -2758,6 +2822,14 @@ class Handler(BaseHTTPRequestHandler):
             if err := gate("qastop"):
                 return self.api_json({"error": err}, 403)
             return self.api_json({"ok": True, "confirmed": stop_qa(pr, user)})
+        if route == "/api/stack/run":
+            if err := gate("stackrun"):
+                return self.api_json({"error": err}, 403)
+            started = 0
+            for it in pr_stack(pr):
+                if self._spawn_review(str(it["number"]), user, str(body.get("effort") or "")):
+                    started += 1
+            return self.api_json({"ok": True, "started": started})
         if route == "/api/markdone":
             if err := gate("markdone"):
                 return self.api_json({"error": err}, 403)
@@ -3166,45 +3238,49 @@ class Handler(BaseHTTPRequestHandler):
         if err := verify("settings", user, one("exp"), one("sig")):
             return self.deny(err)
         welcome, nxt = bool(one("welcome")), one("next") or "/prbot/"
-        back = lambda banner="": self.settings_page(user, banner, welcome=welcome, nxt=nxt)  # noqa
+        if step == "start":
+            _, err = claude_connect_start(user)
+            banner = (f"<div class='banner err'><span>🚫</span><div>{html.escape(err)}</div></div>"
+                      if err else "")
+            return self.settings_page(user, banner, welcome=welcome, nxt=nxt)
+        banner = self._claude_result(user, step, form)
+        if (step == "code" and claude_connected(user) and welcome
+                and (load_users().get(user) or {}).get("slack_id")):
+            return self.redirect(nxt if nxt.startswith("/prbot/") else "/prbot/")
+        return self.settings_page(user, banner, welcome=welcome, nxt=nxt)
+
+    def _claude_result(self, user, step, form):
+        """Claude connect steps (cancel/disconnect/code) → banner HTML. Settings token assumed
+        verified. `start` is handled in the HTML wrapper / api_integrations (it mints the URL)."""
+        one = lambda k: (form.get(k) or [""])[0]  # noqa: E731
         if step == "cancel":
             claude_connect_cancel(user)
-            return back()
+            return ""
         if step == "disconnect":
             def apply(users):
                 uu = users.get(user) or {}
-                for k in ("claude_token_enc", "claude_refresh_enc", "claude_exp",
-                          "claude_added"):
+                for k in ("claude_token_enc", "claude_refresh_enc", "claude_exp", "claude_added"):
                     uu.pop(k, None)
                 users[user] = uu
             modify_users(apply)
             claude_connect_cancel(user)
-            return back("<div class='banner ok'><span>✓</span><div>Claude disconnected — reviews "
-                        "you start use the shared team runner again.</div></div>")
-        if step == "start":
-            url, err = claude_connect_start(user)
-            if err:
-                return back(f"<div class='banner err'><span>🚫</span><div>{html.escape(err)}"
-                            f"</div></div>")
-            return back()
+            return ("<div class='banner ok'><span>✓</span><div>Claude disconnected — you'll need "
+                    "to reconnect to run reviews.</div></div>")
         code = one("code").strip()
         if not code:
-            return back("<div class='banner warn'><span>⚠️</span><div>Paste the code Claude "
-                        "showed you.</div></div>")
+            return ("<div class='banner warn'><span>⚠️</span><div>Paste the code Claude showed "
+                    "you.</div></div>")
         result, err = claude_connect_code(user, code)
         if err:
-            return back(f"<div class='banner err'><span>🚫</span><div>{html.escape(err)}"
-                        f"</div></div>")
+            return f"<div class='banner err'><span>🚫</span><div>{html.escape(err)}</div></div>"
         ok, why = verify_claude_token(result["access_token"])
         if not ok:
-            return back(f"<div class='banner err'><span>🚫</span><div>Got a token from Claude "
-                        f"but it did not work here: <code>{html.escape(why)}</code></div></div>")
+            return (f"<div class='banner err'><span>🚫</span><div>Got a token from Claude but it "
+                    f"did not work here: <code>{html.escape(why)}</code></div></div>")
         store_claude_token(user, result)
         print(f"claude connected: {user}", flush=True)
-        if welcome and (load_users().get(user) or {}).get("slack_id"):
-            return self.redirect(nxt if nxt.startswith("/prbot/") else "/prbot/")
-        return back("<div class='banner ok'><span>✓</span><div>Claude connected — reviews you "
-                    "start now run on your own account.</div></div>")
+        return ("<div class='banner ok'><span>✓</span><div>Claude connected — reviews you start "
+                "now run on your own account.</div></div>")
 
     def do_skill(self, user, step, form):
         one = lambda k: (form.get(k) or [""])[0]  # noqa: E731
@@ -3464,22 +3540,23 @@ class Handler(BaseHTTPRequestHandler):
         if err := verify("settings", user, one("exp"), one("sig")):
             return self.deny(err)
         welcome, nxt = bool(one("welcome")), one("next") or "/prbot/"
+        return self.settings_page(user, self._settings_result(user, form),
+                                  welcome=welcome, nxt=nxt)
 
-        def again(msg):
-            return self.settings_page(user, f"<div class='banner err'><span>🚫</span><div>{msg}"
-                                            f"</div></div>", welcome=welcome, nxt=nxt)
-        # Validate first (verify_pat is a network call) so the locked mutation stays quick and has
-        # no early returns inside it. Each integration card is its own form, so only touch a field
-        # the form actually sent — the GitHub form has no slack_id and must not wipe it, vice versa.
+    def _settings_result(self, user, form):
+        """Save the Slack ID and/or replace the GitHub PAT → banner HTML. Settings token assumed
+        verified. Only touches a field the form actually sent."""
+        one = lambda k: (form.get(k) or [""])[0]  # noqa: E731
+        err_b = lambda m: f"<div class='banner err'><span>🚫</span><div>{m}</div></div>"  # noqa
         slack_val = one("slack_id").strip() if "slack_id" in form else None
         pat = one("pat").strip()
         new_pat_enc = new_name = None
         if pat:
             login, name, err = verify_pat(pat)
             if err:
-                return again(html.escape(err))
+                return err_b(html.escape(err))
             if login != user:
-                return again(f"That token belongs to <code>{html.escape(login)}</code>, not you.")
+                return err_b(f"That token belongs to <code>{html.escape(login)}</code>, not you.")
             new_pat_enc, new_name = enc(pat), name
 
         def apply(users):
@@ -3491,8 +3568,7 @@ class Handler(BaseHTTPRequestHandler):
             u["updated"] = int(time.time())
             users[user] = u
         modify_users(apply)
-        return self.settings_page(user, "<div class='banner ok'><span>✓</span><div>Saved."
-                                        "</div></div>", welcome=welcome, nxt=nxt)
+        return "<div class='banner ok'><span>✓</span><div>Saved.</div></div>"
 
     # -- pages -------------------------------------------------------------------------------
     def index_page(self, user, tab="todo", sort="newest"):

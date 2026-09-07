@@ -166,7 +166,7 @@ export function Queue({ me }: { me: Me }) {
       )}
 
       {filtered.length > 0 ? (
-        <div className="list" id="qlist">
+        <div className="list" id="qlist" data-tour="queuelist">
           {filtered.map((r) => (
             <Row key={r.num} row={r} />
           ))}
