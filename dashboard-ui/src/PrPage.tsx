@@ -43,10 +43,12 @@ function Reviewers({ data }: { data: ReviewersData }) {
           return (
             <div className="revrow" key={r.login}>
               <span className="revav">{(r.login[0] || "?").toUpperCase()}</span>
-              <span className="revname">{r.login}</span>
-              <span className={"revst " + cls}>
-                {ic} {lbl}
-              </span>
+              <div className="revmeta">
+                <span className="revname" title={r.login}>{r.login}</span>
+                <span className={"revst " + cls}>
+                  {ic} {lbl}
+                </span>
+              </div>
             </div>
           );
         })}

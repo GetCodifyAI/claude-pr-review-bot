@@ -196,16 +196,14 @@ if [ -n "$usage_line" ]; then
 fi
 git -C "$BASE" worktree remove --force "$wt" 2>/dev/null || true
 
-# Everyone this PR is awaiting gets the ready ping — the review is shared, only the posting
-# is per person. Slack member IDs come from users.json; fall back to the owner.
+# Ping ONLY the person who triggered this run — your run, your ping. The drafted review is
+# shared (any requested reviewer can open it), but starting a run must not ping other reviewers
+# as if their own review were done. Slack member ID comes from users.json; no id => no ping.
 who=""
-for login in $(jq -r --arg n "$PR" '.[] | select((.number|tostring)==$n) | .requested[]?' \
-                  "$ROOT/queue.json" 2>/dev/null); do
-  sid=$(jq -r --arg l "$login" '.[$l].slack_id // ""' "$ROOT/users.json" 2>/dev/null)
-  who+="${sid:+<@$sid> }"
-done
-[ -n "$who" ] || who="<@$(jq -r --arg l "$REVIEWER" '.[$l].slack_id // ""' "$ROOT/users.json" 2>/dev/null)> "
-[ "$who" = "<@> " ] && who=""
+if [ -n "$ACTOR" ]; then
+  sid=$(jq -r --arg l "$ACTOR" '.[$l].slack_id // ""' "$ROOT/users.json" 2>/dev/null)
+  who="${sid:+<@$sid> }"
+fi
 
 event=$(jq -r '.event // "COMMENT"' "$DIR/review.json")
 n=$(jq '.comments | length' "$DIR/review.json")
