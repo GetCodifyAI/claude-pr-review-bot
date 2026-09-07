@@ -20,6 +20,12 @@ cd "$(dirname "$0")" || exit 1
 . "$(dirname "$0")/lib-common.sh"
 require_env
 
+# Don't Slack-nudge for PRs created long ago: a fresh review request on a years-old open PR is
+# almost always noise (see the pilot feedback). Such PRs are still marked seen (so they never
+# spam) and stay fully visible + reviewable in the dashboard queue — only the Slack ping is
+# suppressed. 0 disables the cutoff. Tunable in .env as PRBOT_MAX_PR_AGE_DAYS.
+MAX_AGE_DAYS="${PRBOT_MAX_PR_AGE_DAYS:-45}"
+
 USERS_FILE="$ROOT/users.json"
 logins=$(jq -r 'keys[]' "$USERS_FILE" 2>/dev/null)
 [ -n "$logins" ] || logins="$REVIEWER"
@@ -91,6 +97,23 @@ jq -c '.[]' "$ROOT/queue.json" | while read -r pr; do
     seen_for "$num" "$login" || new+="$login "
   done
   [ -n "$new" ] || continue
+
+  # Stale-PR cutoff: suppress the Slack nudge for PRs created more than MAX_AGE_DAYS ago, but
+  # still mark them seen so they never re-ping. The dashboard queue is unaffected.
+  if [ "${MAX_AGE_DAYS:-0}" -gt 0 ]; then
+    created=$(echo "$pr" | jq -r '.createdAt // empty')
+    if [ -n "$created" ]; then
+      created_s=$(date -d "$created" +%s 2>/dev/null || echo 0)
+      if [ "$created_s" -gt 0 ]; then
+        age_days=$(( ( $(date +%s) - created_s ) / 86400 ))
+        if [ "$age_days" -gt "$MAX_AGE_DAYS" ]; then
+          echo "==> #$num created ${age_days}d ago (> ${MAX_AGE_DAYS}d) — marking seen, no ping"
+          for login in $new; do echo "$num:$login" >> "$SEEN"; done
+          continue
+        fi
+      fi
+    fi
+  fi
 
   draft=$(echo "$pr"  | jq -r .isDraft)
   is_bot=$(echo "$pr" | jq -r '.isBot')

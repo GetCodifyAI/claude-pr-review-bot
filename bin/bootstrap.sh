@@ -69,6 +69,7 @@ ensure_key GH_CLIENT_SECRET ""
 ensure_key GH_OAUTH_SCOPES ""
 ensure_key DRY_RUN 1
 ensure_key SKIP_BOT_PRS 0
+ensure_key PRBOT_MAX_PR_AGE_DAYS 45
 ensure_key PRBOT_SECRET "$(openssl rand -hex 32)"
 grep -q '^GITHUB_PAT=.\+' "$ROOT/.env" \
   || echo "   !! GITHUB_PAT is empty in $ROOT/.env — add it, then re-run"

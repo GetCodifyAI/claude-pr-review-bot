@@ -268,7 +268,7 @@ export const api = {
   logout: () => post<{ ok: boolean }>("/logout"),
   pr: (pr: string, v?: string) => get<PrData>(`/pr?pr=${pr}${v ? `&v=${v}` : ""}`),
   review: (pr: string, t: Token, effort: string, focus: string) =>
-    post<{ ok: boolean }>("/review", { pr, ...t, effort, focus }),
+    post<{ ok: boolean; started?: boolean }>("/review", { pr, ...t, effort, focus }),
   stop: (pr: string, t: Token) => post<{ ok: boolean; confirmed: boolean }>("/stop", { pr, ...t }),
   markdone: (pr: string, t: Token) => post<{ ok: boolean }>("/markdone", { pr, ...t }),
   archive: (pr: string, t: Token, action: "archive" | "unarchive") =>

@@ -92,16 +92,33 @@ function RunForm({
   const [effort, setEffort] = useState(form.suggested);
   const [focus, setFocus] = useState("");
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
   if (!connected) return <ClaudeGate action="review" />;
   return (
     <form
       onSubmit={async (e) => {
         e.preventDefault();
+        setErr("");
         setBusy(true);
-        await api.review(pr, token, effort, focus);
+        const r = await api.review(pr, token, effort, focus);
+        if (r.started === false) {
+          // A previous run still holds the per-PR lock (e.g. a stop that could not be confirmed).
+          setBusy(false);
+          setErr(
+            "Couldn't start — a previous run may still be finishing or holding the lock. " +
+              "Try Stop, then start again in a moment.",
+          );
+          return;
+        }
         onStarted();
       }}
     >
+      {err && (
+        <div className="banner warn">
+          <span>⚠️</span>
+          <div>{err}</div>
+        </div>
+      )}
       <div className="effort-lbl">Effort</div>
       <div className="effrow">
         {form.levels.map((l) => (

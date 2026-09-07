@@ -2807,8 +2807,11 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/review":
             if err := gate("review"):
                 return self.api_json({"error": err}, 403)
-            self._spawn_review(pr, user, str(body.get("effort") or ""), str(body.get("focus") or ""))
-            return self.api_json({"ok": True})
+            started = self._spawn_review(pr, user, str(body.get("effort") or ""),
+                                         str(body.get("focus") or ""))
+            # started is False when a previous run still holds the per-PR lock (e.g. a stop that
+            # could not be confirmed). Surface it so the UI doesn't look like a silent no-op.
+            return self.api_json({"ok": True, "started": started})
         if route == "/api/stop":
             if err := gate("stop"):
                 return self.api_json({"error": err}, 403)
@@ -4409,8 +4412,14 @@ class Handler(BaseHTTPRequestHandler):
         """Post the selected comments; returns a banner HTML string (reused by the HTML page and
         the JSON API)."""
         one = lambda k: (form.get(k) or [""])[0]  # noqa: E731
+        # Don't post a review that is still being (re)generated — the review.json on disk may be
+        # the previous run's, and posting it produces a half-built comment on the real PR.
+        if is_running(pr):
+            return ("<div class='banner warn'><span>⏳</span><div>A review is still running "
+                    "for this PR — wait for it to finish, then post.</div></div>")
         rev = load_review(pr) or {}
         chosen = []
+        blank = []
         for i in range(int(one("count") or 0)):
             if not form.get(f"sel_{i}"):
                 continue
@@ -4421,10 +4430,21 @@ class Handler(BaseHTTPRequestHandler):
             sugg = one(f"sugg_{i}").rstrip("\n")
             if sugg.strip():
                 body = f"{body}\n\n```suggestion\n{sugg}\n```"
+            # A selected finding whose text was cleared would be silently dropped downstream
+            # (empty-body comments are skipped), so it never reaches GitHub and never folds into
+            # the summary — the reviewer thinks they posted it. Catch it and refuse instead.
+            if not body.strip():
+                loc = one(f"path_{i}") + (f":{line}" if line.isdigit() else "")
+                blank.append(loc or f"finding {i + 1}")
             chosen.append({"path": one(f"path_{i}"),
                            "line": int(line) if line.isdigit() else None,
                            "severity": one(f"sev_{i}"),
                            "body": body})
+        if blank:
+            items = ", ".join(f"<code>{html.escape(b)}</code>" for b in blank)
+            return ("<div class='banner warn'><span>⚠️</span><div>These selected "
+                    f"finding(s) have no text: {items}. Add a comment or unselect them before "
+                    "posting.</div></div>")
         # Learnings: capture what was dropped/edited/kept before posting — the same signal the
         # dashboard used to discard. Sorted like review_body so form index i lines up. Done
         # even when nothing is chosen (dropping every finding is the strongest signal), and
@@ -4454,6 +4474,12 @@ class Handler(BaseHTTPRequestHandler):
         # No bot signature: this posts under the reviewer's own account, so GitHub already
         # attributes it. A trailing "Reviewed by @x" only restates the byline.
         body = (rev.get("summary") or "").strip() + prbot_diff.orphan_block(orphans)
+        # A COMMENT review with an empty body and no inline comments is a half-built post — refuse
+        # it. (Can happen if the review has no summary and every selected finding failed to anchor.)
+        if not body.strip() and not inline:
+            return ("<div class='banner warn'><span>⚠️</span><div>Nothing to post — the "
+                    "review has no summary and none of the selected findings could be anchored to "
+                    "the current diff.</div></div>")
         # Default is a plain COMMENT review. The reviewer can deliberately choose REQUEST_CHANGES
         # from the post bar (never the agent's call) — a human-only, blocking action.
         event = "REQUEST_CHANGES" if form.get("request_changes") else "COMMENT"
