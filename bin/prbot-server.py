@@ -1443,7 +1443,7 @@ border-radius:999px;padding:5px 13px}
 .step.hit{border-color:var(--okln);color:#8fecc2;background:var(--okbg)}
 /* queue list */
 .list{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;
-box-shadow:var(--shadow)}
+box-shadow:var(--shadow);margin-top:16px}
 .row{display:flex;align-items:center;border-bottom:1px solid var(--line2);transition:background .13s}
 .row:last-child{border-bottom:0}
 .row:hover{background:var(--panel2)}
