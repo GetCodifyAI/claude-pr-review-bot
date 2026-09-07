@@ -2125,32 +2125,52 @@ def pr_stack(pr):
 
 
 def pr_reviewers(pr):
-    """GitHub's reviewer list with each one's status, plus the overall decision — the same info
-    as GitHub's Reviewers sidebar. One gh call."""
-    d = gh_json(["pr", "view", str(pr), "--repo", REPO,
-                 "--json", "reviewRequests,reviews,reviewDecision"], default={})
-    if not isinstance(d, dict):
-        return {"reviewers": [], "decision": None}
+    """GitHub's reviewer list + each one's status + overall decision — like GitHub's Reviewers
+    sidebar. Uses the REST API (works with a plain `repo` token; the GraphQL reviewRequests query
+    needs `read:org`, which our service token doesn't have)."""
+    reqs = gh_json(["api", f"repos/{REPO}/pulls/{pr}/requested_reviewers"], default={})
+    # --slurp wraps each page in an array so --paginate stays valid JSON; flatten it.
+    pages = gh_json(["api", f"repos/{REPO}/pulls/{pr}/reviews", "--paginate", "--slurp"], default=[])
+    reviews = []
+    for pg in pages if isinstance(pages, list) else []:
+        reviews.extend(pg if isinstance(pg, list) else [pg])
     requested = []
-    for r in d.get("reviewRequests") or []:
-        who = r.get("login") or r.get("slug") or r.get("name")
-        if who:
-            requested.append(who)
-    latest = {}
-    for rv in d.get("reviews") or []:                 # chronological — last state per author wins
-        login = (rv.get("author") or {}).get("login")
-        state = rv.get("state")
-        if login and state and state != "PENDING":
-            latest[login] = state
+    if isinstance(reqs, dict):
+        for u in reqs.get("users") or []:
+            if u.get("login"):
+                requested.append(u["login"])
+        for t in reqs.get("teams") or []:
+            if t.get("slug") or t.get("name"):
+                requested.append(t.get("slug") or t.get("name"))
+    disp, eff = {}, {}                                # latest state per user (display) + effective
+    if isinstance(reviews, list):
+        for rv in reviews:                            # chronological
+            login = (rv.get("user") or {}).get("login")
+            st = rv.get("state")
+            if not login or not st or st == "PENDING":
+                continue
+            disp[login] = st
+            if st in ("APPROVED", "CHANGES_REQUESTED"):
+                eff[login] = st
+            elif st == "DISMISSED":
+                eff.pop(login, None)
     out, seen = [], set()
     for who in requested:                             # a (re-)requested reviewer reads as pending
         out.append({"login": who, "state": "AWAITING"})
         seen.add(who)
-    for login, st in latest.items():
+    for login, st in disp.items():
         if login not in seen:
             out.append({"login": login, "state": st})
             seen.add(login)
-    return {"reviewers": out, "decision": d.get("reviewDecision")}
+    if any(s == "CHANGES_REQUESTED" for s in eff.values()):
+        decision = "CHANGES_REQUESTED"
+    elif any(s == "APPROVED" for s in eff.values()) and not requested:
+        decision = "APPROVED"
+    elif requested:
+        decision = "REVIEW_REQUIRED"
+    else:
+        decision = None
+    return {"reviewers": out, "decision": decision}
 
 
 def sev_counts(comments):
