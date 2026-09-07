@@ -69,9 +69,9 @@ echo "$meta" | jq -r .headRefOid > "$DIR/head"
 # "this touches money / catalog / DP-integration code, look harder". Never a gate, never routing.
 paths=$(echo "$meta" | jq -r '.files[]?.path // empty' 2>/dev/null)
 risk=""
-printf '%s\n' "$paths" | grep -qiE 'pric|/cost|discount|promo|rebate|margin|/fees?/|Fee' && risk+="pricing "
-printf '%s\n' "$paths" | grep -qiE 'catalog|[Pp]roduct|elasticsearch|ProductSearch' && risk+="catalog "
-printf '%s\n' "$paths" | grep -qiE 'integrators/|SyncLibs|dpCode|vendorId' && risk+="dp "
+printf '%s\n' "$paths" | grep -qiE 'pric|/cost|discount|promo|rebate|margin|/fees?/|Fee|PricingService|OGPrice|OrderGuide|DraftPricing|ZeroPriced|UnitPrice|LocationPriceSync|pricingEngine|dateBasedPricing|SupplierLitePricing' && risk+="pricing "
+printf '%s\n' "$paths" | grep -qiE 'catalog|[Pp]roduct|elasticsearch|opensearch|ProductSearch|categor' && risk+="catalog "
+printf '%s\n' "$paths" | grep -qiE 'integrators/|SyncLibs|dpCode|vendorId|VerifiedVendor|IntegrationData' && risk+="dp "
 echo "$risk" | xargs > "$DIR/risk" 2>/dev/null || true
 
 # Base clone lives under $ROOT, deliberately NOT the rsync target

@@ -717,6 +717,10 @@ EFFORT_DEPTH = {
         "scenario (the exact inputs/state that produce the wrong output or crash) — no vague or "
         "speculative findings. Cover the ground exhaustively in your analysis prose, but do not "
         "pad the findings list.\n"
+        "7. Quality gates (note, don't block): if the PR adds, removes, renames or changes the "
+        "default of a feature flag (GateKeeper etc.) without a matching update to "
+        "docs/features/README.md, call it out with the flag name and what to document; if it adds "
+        "meaningful new logic with no tests, name the key functions/hooks that lack coverage.\n"
         "Take the time the 40-minute budget allows. This is analysis depth only — you still write "
         "findings for a human to review and post, and you never post to GitHub yourself."),
 }
