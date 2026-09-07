@@ -608,6 +608,67 @@ EFFORT = {
 }
 EFFORT_ORDER = ["quick", "standard", "deep"]
 
+# The depth instruction appended to the active skill's prompt for each level. All three run the
+# SAME skill — only this text and the timeout differ. These are the defaults; a team can edit them
+# on the Skills page (stored as _effort_<level>.md) and run-review.sh receives the chosen text.
+EFFORT_DEPTH = {
+    "quick": (
+        "Effort level: QUICK. Look only at the diff and the files it directly changes. Report "
+        "only clear correctness bugs, broken logic and obvious runtime failures. Skip style, "
+        "speculative concerns and minor edge cases. Keep findings very few — this is a fast pass."),
+    "standard": (
+        "Effort level: STANDARD. Review the changed files and their immediate callers and "
+        "context. Cover correctness, error handling, obvious edge cases and clear risks. Keep "
+        "findings focused and high-confidence."),
+    "deep": (
+        "Effort level: DEEP — do a thorough, Devin-style deep analysis. Work through this method "
+        "before writing any finding, and report only what you can tie to concrete evidence (the "
+        "diff, the code, review threads, commit history):\n"
+        "1. Intent. Read the PR description and review threads; identify what the change is trying "
+        "to do and which behaviours it touches (data flow/state, query/API logic, UI, business "
+        "rules, error handling).\n"
+        "2. Comprehensive impact search FIRST. Before judging any line, search the whole "
+        "repository for every component the change affects — callers and dependents of changed "
+        "functions/fields, shared models, GraphQL queries/mutations/fragments, and any per-DP or "
+        "per-vendor branching. Build the full blast radius up front; never discover impacts "
+        "reactively.\n"
+        "3. Trace data flow end to end for each meaningful change (request → controller → library "
+        "→ model → response; on the frontend document → cache → component).\n"
+        "4. Then examine, reporting only genuine issues: correctness & logic (conditionals, "
+        "short-circuits, off-by-one/boundaries, skip-conditions that exclude valid states, "
+        "null/undefined and defaults for new fields); error handling (failure modes covered, "
+        "errors surfaced not swallowed, loading/empty states, missing try/catch on critical "
+        "paths); concurrency & races; edge cases only where the PR changes their handling (empty "
+        "collections, single-vs-many, first-time/no-data, migration of old data under new code, "
+        "network failure); performance & scalability (N+1 queries, unbounded loops/allocations, "
+        "hot-path cost); security (input validation, authz gaps, injection, secrets); and Cut+Dry "
+        "domain risk (pricing/cost/discount/margin math, catalog & search, DP-specific behaviour, "
+        "GraPhP model property renames on persisted nodes, Apollo cache correctness).\n"
+        "5. Give each finding an honest confidence and keep only high-signal ones — cover the "
+        "ground exhaustively in your analysis prose, but do not pad the findings list.\n"
+        "Take the time the 40-minute budget allows. This is analysis depth only — you still write "
+        "findings for a human to review and post, and you never post to GitHub yourself."),
+}
+
+
+def effort_depth_path(level):
+    return SKILLS_DIR / f"_effort_{level}.md"
+
+
+def effort_depth(level):
+    """The depth instruction for a level: the team-edited text if present, else the default."""
+    try:
+        t = effort_depth_path(level).read_text()
+        if t.strip():
+            return t
+    except OSError:
+        pass
+    return EFFORT_DEPTH.get(level, EFFORT_DEPTH["standard"])
+
+
+def effort_edited(level):
+    return effort_depth_path(level).exists()
+
 
 def autosize_effort(meta):
     """Suggest an effort level from PR size (files + lines changed)."""
@@ -706,15 +767,29 @@ def load_history_review(pr, ts):
         return None
 
 
-def stop_review(pr):
-    """Terminate a running review by killing its process group; leave a 'stopped' status."""
-    d = STATE / str(pr)
+def _kill_group(pidfile):
+    """Force-stop a spawned job by its process group. SIGTERM then SIGKILL, because `claude -p`
+    traps SIGTERM and keeps running (and keeps the per-PR flock held) — which is exactly why a
+    stopped review used to be un-rerunnable: the lock never released, so is_running() stayed True.
+    SIGKILL guarantees the group dies and the lock frees, so a re-run works immediately."""
     try:
-        pid = int((d / "pid").read_text().strip())
-        os.killpg(pid, signal.SIGTERM)
+        pid = int(pidfile.read_text().strip())
     except (OSError, ValueError):
-        pass
-    (d / "pid").unlink(missing_ok=True)
+        pidfile.unlink(missing_ok=True)
+        return
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(pid, sig)
+        except OSError:
+            break                                   # group already gone
+        time.sleep(0.3)
+    pidfile.unlink(missing_ok=True)
+
+
+def stop_review(pr):
+    """Force-stop a running review and leave a 'stopped' status that can be re-run."""
+    d = STATE / str(pr)
+    _kill_group(d / "pid")
     (d / "status").write_text("stopped")
 
 
@@ -790,12 +865,7 @@ def qa_list():
 
 def stop_qa(pr):
     d = STATE / str(pr)
-    try:
-        pid = int((d / "qa.pid").read_text().strip())
-        os.killpg(pid, signal.SIGTERM)
-    except (OSError, ValueError):
-        pass
-    (d / "qa.pid").unlink(missing_ok=True)
+    _kill_group(d / "qa.pid")
     (d / "qa.status").write_text("stopped")
 
 
@@ -1007,8 +1077,8 @@ CSS = """
 :root{
 --bg:#0a0b12;--panel:#12141d;--panel2:#171a25;--line:#242838;--line2:#1b1e2a;
 --hair:rgba(255,255,255,.06);--fg:#e9ebf3;--dim:#9aa0b4;--faint:#6b7186;
---blue:#5b7cfa;--purple:#a855f7;--pink:#ec4899;
---grad:linear-gradient(135deg,#5b7cfa 0%,#a855f7 52%,#ec4899 100%);
+--blue:#5b7cfa;--purple:#7c83f0;--pink:#ec4899;
+--grad:linear-gradient(135deg,#5b7cfa 0%,#6a65ec 100%);
 --ok:#3ddc97;--okbg:rgba(61,220,151,.10);--okln:rgba(61,220,151,.30);
 --warn:#f5b64a;--warnbg:rgba(245,182,74,.10);--warnln:rgba(245,182,74,.30);
 --err:#ff7089;--errbg:rgba(255,112,137,.10);--errln:rgba(255,112,137,.32);
@@ -1016,10 +1086,11 @@ CSS = """
 --r:14px;--font:'Inter',-apple-system,system-ui,"Segoe UI",sans-serif;
 --mono:ui-monospace,'SF Mono',SFMono-Regular,Menlo,monospace}
 html{-webkit-text-size-adjust:100%}
+[hidden]{display:none!important}
 body{font:15px/1.65 var(--font);background:var(--bg);color:var(--fg);margin:0;
 padding:0;letter-spacing:-.006em;
 background-image:radial-gradient(900px 380px at 50% -160px,rgba(91,124,250,.10),transparent 70%)}
-::selection{background:rgba(168,85,247,.32)}
+::selection{background:rgba(124,131,240,.32)}
 a{color:var(--blue);text-decoration:none}a:hover{color:#8aa2ff}
 h1{font-size:1.55rem;font-weight:700;margin:0 0 6px;line-height:1.25;letter-spacing:-.02em}
 h2{font-size:.74rem;margin:32px 0 12px;color:var(--faint);text-transform:uppercase;
@@ -1038,7 +1109,7 @@ height:56px;padding:0 20px;background:rgba(10,11,18,.72);backdrop-filter:saturat
 .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:1.02rem;
 color:var(--fg);letter-spacing:-.02em}
 .brand:hover{color:var(--fg)}
-.brand img{width:28px;height:28px;display:block;filter:drop-shadow(0 2px 6px rgba(168,85,247,.35))}
+.brand img{width:28px;height:28px;display:block;filter:drop-shadow(0 2px 6px rgba(124,131,240,.35))}
 .brand .n{background:var(--grad);-webkit-background-clip:text;background-clip:text;
 -webkit-text-fill-color:transparent}
 .brand .tag{color:var(--faint);font-weight:500;font-size:.82rem;margin-left:2px;
@@ -1064,7 +1135,7 @@ box-shadow:var(--shadow);transition:transform .15s,border-color .15s;display:blo
 .stat.hot .k{background:var(--grad);-webkit-background-clip:text;background-clip:text;
 -webkit-text-fill-color:transparent}
 .stat .l{color:var(--dim);font-size:.86rem;margin-top:6px;display:flex;align-items:center;gap:6px}
-.stat.on{border-color:var(--purple);box-shadow:0 0 0 1px rgba(168,85,247,.3),var(--shadow)}
+.stat.on{border-color:var(--purple);box-shadow:0 0 0 1px rgba(124,131,240,.3),var(--shadow)}
 .tabdesc{color:var(--dim);font-size:.88rem;margin:12px 2px 14px;min-height:1.2em}
 .empty{padding:44px 20px;text-align:center;color:var(--dim)}
 .empty .ic{font-size:2rem;display:block;margin-bottom:8px;opacity:.7}
@@ -1098,7 +1169,7 @@ white-space:nowrap;border:1px solid transparent}
 .blocker{background:var(--errbg);color:#ff8ca0;border-color:var(--errln)}
 .should-fix{background:var(--warnbg);color:#f7c26b;border-color:var(--warnln)}
 .nit{background:rgba(91,124,250,.12);color:#9db4ff;border-color:rgba(91,124,250,.32)}
-.question{background:rgba(168,85,247,.14);color:#cba6f7;border-color:rgba(168,85,247,.34)}
+.question{background:rgba(124,131,240,.14);color:#aeb6ff;border-color:rgba(124,131,240,.34)}
 .new{background:rgba(91,124,250,.12);color:#9db4ff;border-color:rgba(91,124,250,.30)}
 .reviewing{background:var(--warnbg);color:#f7c26b;border-color:var(--warnln)}
 .done{background:rgba(91,124,250,.12);color:#9db4ff;border-color:rgba(91,124,250,.30)}
@@ -1171,7 +1242,7 @@ textarea{width:100%;background:#0b0d15;color:var(--fg);border:1px solid var(--li
 border-radius:11px;padding:12px 14px;font:13px/1.6 var(--mono);resize:vertical;min-height:150px;
 transition:border-color .18s,box-shadow .18s}
 textarea:focus,input[type=text]:focus,input[type=password]:focus{outline:0;
-border-color:var(--purple);box-shadow:0 0 0 3px rgba(168,85,247,.18)}
+border-color:var(--purple);box-shadow:0 0 0 3px rgba(124,131,240,.18)}
 textarea.short{min-height:76px}
 input[type=checkbox]{width:18px;height:18px;accent-color:var(--purple);cursor:pointer;flex:none}
 label{cursor:pointer}
@@ -1201,7 +1272,7 @@ transition:transform .15s cubic-bezier(.2,.7,.2,1),background .15s,border-color 
    their focus ring (defined on .in / textarea) */
 a:focus,button:focus,summary:focus,.btn:focus,.tab:focus,.stat:focus,.sortopt:focus,
 .ni:focus,.row a:focus,.rowact:focus,.peek:focus{outline:none}
-:focus-visible{outline:2px solid rgba(168,85,247,.6);outline-offset:2px}
+:focus-visible{outline:2px solid rgba(124,131,240,.6);outline-offset:2px}
 .spin{width:13px;height:13px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;
 border-radius:50%;display:inline-block;animation:spin .6s linear infinite}
 /* post-selected action bar — inline at the end of the findings form (not fixed, so it never
@@ -1280,11 +1351,14 @@ align-items:center;border-radius:9px 9px 0 0;transition:color .15s,background .1
 .tab.on::after{content:"";position:absolute;left:8px;right:8px;bottom:-1px;height:2px;
 background:var(--grad);border-radius:2px}
 .cnt{background:var(--panel2);border-radius:999px;padding:1px 8px;font-size:.72rem;color:var(--dim)}
-.tab.on .cnt{background:rgba(168,85,247,.18);color:#cba6f7}
+.tab.on .cnt{background:rgba(124,131,240,.18);color:#aeb6ff}
 .sortbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:16px 0 12px}
 .qtools{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin:14px 0 0}
 .qtools .sortbar{margin:0}
 #qsearch{flex:1;min-width:200px;max-width:380px;padding:9px 13px}
+.qjump{display:block;margin:12px 0 0;padding:11px 15px;border-radius:11px;font-weight:600;
+font-size:.9rem;color:#bcd0ff;background:rgba(91,124,250,.12);border:1px solid rgba(91,124,250,.3)}
+.qjump:hover{background:rgba(91,124,250,.2);color:#fff}
 .sortopt{font-size:.82rem;color:var(--dim);padding:5px 11px;border-radius:999px;
 border:1px solid transparent;transition:background .15s,color .15s}
 .sortopt:hover{color:var(--fg);background:var(--panel)}
@@ -1328,7 +1402,7 @@ font-weight:550}
 .steps li:last-child{padding-bottom:0}
 .steps li::before{content:counter(s);position:absolute;left:0;top:-2px;width:30px;height:30px;
 border-radius:999px;background:var(--grad);color:#fff;font-weight:700;font-size:.85rem;
-display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px -4px rgba(168,85,247,.6)}
+display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px -4px rgba(124,131,240,.6)}
 .steps li:not(:last-child)::after{content:"";position:absolute;left:14px;top:32px;bottom:6px;
 width:2px;background:linear-gradient(var(--line),transparent)}
 .steps h5{margin:3px 0 8px;font-size:1rem}
@@ -1355,8 +1429,8 @@ padding:18px 14px;border-right:1px solid var(--hair);background:rgba(12,14,20,.5
 font-size:.92rem;font-weight:500;transition:background .14s,color .14s}
 .ni svg{width:18px;height:18px;flex:none}
 .ni:hover{background:var(--panel);color:var(--fg)}
-.ni.on{color:var(--fg);background:linear-gradient(90deg,rgba(168,85,247,.16),rgba(91,124,250,.04));
-font-weight:600}.ni.on svg{color:var(--purple)}
+.ni.on{color:var(--fg);background:linear-gradient(90deg,rgba(91,124,250,.16),rgba(91,124,250,.03));
+font-weight:600}.ni.on svg{color:var(--blue)}
 .sidefoot{margin-top:auto;display:flex;flex-direction:column;gap:10px;padding:14px 8px 2px;
 border-top:1px solid var(--hair)}
 .sidefoot .who{display:flex;align-items:center;gap:9px;color:var(--fg);font-weight:550;font-size:.9rem}
@@ -1396,7 +1470,7 @@ justify-content:center;box-shadow:0 4px 12px -4px rgba(0,0,0,.6)}
 /* form controls that read as controls */
 .in{width:100%;background:#0a0c14;border:1px solid var(--line);border-radius:10px;padding:11px 13px;
 font:13.5px/1.4 var(--mono);color:var(--fg);transition:border-color .16s,box-shadow .16s}
-.in:focus{outline:0;border-color:var(--purple);box-shadow:0 0 0 3px rgba(168,85,247,.16)}
+.in:focus{outline:0;border-color:var(--purple);box-shadow:0 0 0 3px rgba(124,131,240,.16)}
 .inrow{display:flex;gap:9px;align-items:stretch}.inrow .in{flex:1;min-width:0}
 .intg .btn{background:#252c40}.intg .btn:hover{background:#2e3650}
 .intg .btn.primary{background:#5b56e0}.intg .btn.primary:hover{background:#6a65ec}
@@ -1418,7 +1492,7 @@ border-radius:999px;background:var(--warnbg);color:#f6cd8a;border:1px solid var(
 .fstep:last-child{padding-bottom:0}
 .fstep .fn{width:34px;height:34px;border-radius:999px;flex:none;background:var(--grad);color:#fff;
 display:flex;align-items:center;justify-content:center;font-weight:700;position:relative;
-box-shadow:0 4px 12px -4px rgba(168,85,247,.6)}
+box-shadow:0 4px 12px -4px rgba(124,131,240,.6)}
 .fstep:not(:last-child) .fn::after{content:"";position:absolute;top:34px;left:50%;transform:translateX(-50%);
 width:2px;height:calc(100% - 8px);background:linear-gradient(var(--line),transparent)}
 .fstep .fb{flex:1;padding-top:4px}.fstep .fb h4{margin:0 0 5px}
@@ -1432,14 +1506,14 @@ border-radius:10px;overflow:hidden;box-shadow:var(--shadow)}
 .mini .t{font-weight:600;margin-bottom:4px;display:flex;align-items:center;gap:8px}
 /* sign-in screen */
 .auth{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px 18px;
-background-image:radial-gradient(720px 360px at 50% -60px,rgba(168,85,247,.16),transparent 68%),
+background-image:radial-gradient(720px 360px at 50% -60px,rgba(124,131,240,.16),transparent 68%),
 radial-gradient(620px 320px at 50% 120%,rgba(91,124,250,.12),transparent 70%)}
 .authcard{width:100%;max-width:428px;background:linear-gradient(180deg,var(--panel2),var(--panel));
 border:1px solid var(--line);border-radius:22px;padding:40px 34px 30px;text-align:center;
-box-shadow:0 32px 90px -34px rgba(0,0,0,.85),0 0 0 1px rgba(168,85,247,.05);
+box-shadow:0 32px 90px -34px rgba(0,0,0,.85),0 0 0 1px rgba(124,131,240,.05);
 animation:rise .55s cubic-bezier(.2,.7,.2,1) both}
 .authlogo{width:66px;height:66px;margin:0 auto 16px;display:block;
-filter:drop-shadow(0 8px 22px rgba(168,85,247,.45))}
+filter:drop-shadow(0 8px 22px rgba(124,131,240,.45))}
 .authcard h1{font-size:1.9rem;letter-spacing:-.02em;margin:0;background:var(--grad);
 -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
 .authsub{color:var(--fg);font-size:.98rem;font-weight:550;margin:6px 0 0}
@@ -1544,16 +1618,28 @@ function mdrender(src){
   flush();if(list)html+='</ul>';
   return html||'<p class=muted>Nothing to preview.</p>';
 }
+function prnum(s){
+  var u=(s||'').match(/\/pull\/(\d+)/);if(u)return u[1];
+  var n=(s||'').trim().replace(/^#/,'');return /^\d{1,7}$/.test(n)?n:'';
+}
+function qjumpgo(){
+  var n=prnum(document.getElementById('qsearch').value);
+  if(n)location.href='/prbot/pr?pr='+n;
+}
 function qfilter(){
   var el=document.getElementById('qsearch');if(!el)return;
-  var q=(el.value||'').trim().toLowerCase();
+  var raw=(el.value||'').trim(),q=raw.toLowerCase();
   var rows=document.querySelectorAll('#qlist .row'),shown=0;
   rows.forEach(function(r){
     var m=!q||r.textContent.toLowerCase().indexOf(q)>-1;
     r.hidden=!m;if(m)shown++;
   });
+  // If they typed/pasted a PR number or URL, offer to open ANY PR — even one not in the queue.
+  var n=prnum(raw),j=document.getElementById('qjump');
+  if(j){if(n){j.href='/prbot/pr?pr='+n;j.textContent='→ Open & review PR #'+n;j.hidden=false;}
+        else j.hidden=true;}
   var none=document.getElementById('qnone');
-  if(none)none.hidden=!(q&&shown===0&&rows.length>0);
+  if(none)none.hidden=!(q&&shown===0&&rows.length>0&&!n);
 }
 function copyQA(btn){
   var t=document.getElementById('qasrc');if(!t)return;
@@ -2511,6 +2597,27 @@ class Handler(BaseHTTPRequestHandler):
         err_b = lambda m: back(f"<div class='banner err'><span>🚫</span><div>{m}</div></div>")  # noqa
         ok = lambda m: back(f"<div class='banner ok'><span>✓</span><div>{m}</div></div>")  # noqa
 
+        # Review-depth instructions (Quick/Standard/Deep) — shared, editable, with reset-to-default.
+        tgt = one("target")
+        if tgt.startswith("effort_"):
+            level = tgt[len("effort_"):]
+            if level not in EFFORT:
+                return err_b("Unknown depth level.")
+            name = EFFORT[level][0]
+            if step == "reset":
+                effort_depth_path(level).unlink(missing_ok=True)
+                return ok(f"Reset the <b>{name}</b> depth to the built-in default.")
+            text = one("skill")
+            if not text.strip():
+                return err_b("The depth instruction can't be empty. Use Reset to restore the "
+                             "default.")
+            if len(text) > 20000:
+                return err_b("That's very large (>20k chars). Trim it.")
+            SKILLS_DIR.mkdir(parents=True, exist_ok=True)
+            effort_depth_path(level).write_text(text)
+            print(f"effort depth saved: {level} ({len(text)} chars)", flush=True)
+            return ok(f"Saved the <b>{name}</b> review depth — it applies to every {name} review.")
+
         # Which skill runs my reviews — my own, or the shared team default.
         if step == "use":
             set_active_skill(user, one("choice"))
@@ -2660,11 +2767,46 @@ class Handler(BaseHTTPRequestHandler):
                    else "<span class=tag-off>None yet</span>")
         my_ed = editor("Edit your own skill", my_chip,
                        self.skill_control(user, exp, sig, frm="skills"))
+
+        # Review-depth editors — what Quick / Standard / Deep each tell the skill to do. All three
+        # run the same skill; only this depth text (and the timeout) differ.
+        def depth_editor(level):
+            name, meta_txt, _ = EFFORT[level]
+            cur, edited = effort_depth(level), effort_edited(level)
+            chip = ("<span class=tag-on>Edited</span>" if edited
+                    else "<span class=tag-off>Default</span>")
+            dh = (f"<input type=hidden name=exp value='{exp}'>"
+                  f"<input type=hidden name=sig value='{sig}'>"
+                  f"<input type=hidden name=target value='effort_{level}'>"
+                  "<input type=hidden name=from value='skills'>")
+            rid = f"effreset_{level}"
+            ctl = (
+                f"<p class='muted sm' style='margin-top:0'>What Robin does on a <b>{name}</b> "
+                f"review ({html.escape(meta_txt)}). Appended to whichever skill runs.</p>"
+                "<form method=post action='/prbot/skill/save'>"
+                "<textarea class=in name=skill spellcheck=false style='min-height:150px;"
+                f"font-size:12.5px'>{html.escape(cur)}</textarea>{dh}"
+                "<div class=inrow style='margin-top:10px'>"
+                "<button class='btn primary' type=submit data-busy='Saving…'>Save depth</button>"
+                + (f"<button class='btn soft' type=submit form={rid}>Reset to default</button>"
+                   if edited else "") + "</div></form>"
+                + (f"<form id={rid} method=post action='/prbot/skill/reset'>{dh}</form>"
+                   if edited else ""))
+            return (f"<details class=skilled><summary>{name} depth {chip}</summary>"
+                    f"<div class=dbody>{ctl}</div></details>")
+        depth_eds = "".join(depth_editor(lv) for lv in EFFORT_ORDER)
+
         stats = prbot_learn.skill_stats()
         head = (f"<h1>Review skills</h1>"
                 "<p class=lead>The skill is the reviewing approach Robin follows. Pick which one "
-                "runs your reviews; edit either one below.</p>"
-                + banner + selector + team_ed + my_ed + "<h2>How each skill scores</h2>")
+                "runs your reviews; edit it below. Quick / Standard / Deep all use the same skill "
+                "— they differ only in the review-depth instructions, which you can edit too.</p>"
+                + banner + selector
+                + "<h2>The skill</h2>" + team_ed + my_ed
+                + "<h2>Review depth</h2>"
+                "<p class='muted sm'>How deep each level goes. Deep is a thorough, Devin-style "
+                "analysis. All three run the skill above.</p>" + depth_eds
+                + "<h2>How each skill scores</h2>")
         if not stats:
             body = head + ("<div class=empty><span class=ic>🧭</span><b>No scores yet</b>Post a "
                            "few reviews and each skill's kept-rate will show up here.</div>")
@@ -2844,8 +2986,10 @@ class Handler(BaseHTTPRequestHandler):
                 + f"<div class=tabdesc>{TAB_DESC.get(tab, '')}</div>"
                 + "<div class=qtools>"
                 + "<input id=qsearch class=in type=search autocomplete=off oninput='qfilter()' "
-                "placeholder='Search #number, title or author…'>"
+                "onkeydown='if(event.key===\"Enter\")qjumpgo()' "
+                "placeholder='Search, or paste a PR number / URL to review any PR…'>"
                 + f"<div class=sortbar><span class='muted sm'>Sort</span>{sorts}</div></div>"
+                + "<a id=qjump class=qjump hidden href='#'></a>"
                 + "<div class=list id=qlist>"
                 + ("".join(rows) if rows else
                    f"<div class=empty><span class=ic>{empty[0]}</span>"
@@ -3307,6 +3451,7 @@ class Handler(BaseHTTPRequestHandler):
             choice, _ = effective_skill(user)
             env = review_env(user)
             env["PRBOT_EFFORT"] = eff
+            env["PRBOT_DEPTH"] = effort_depth(eff)
             env["PRBOT_FOCUS"] = focus
             env["PRBOT_SKILL_CHOICE"] = choice
             with open(d / "run.log", "ab") as log:

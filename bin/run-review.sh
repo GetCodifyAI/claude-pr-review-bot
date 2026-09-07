@@ -31,32 +31,15 @@ have_free_mem || fail "not enough free memory to start a review"
 # diff, human-overridable). It changes only two things: the timeout, and a depth instruction
 # appended to the prompt. Everything else about the run is identical.
 EFFORT="${PRBOT_EFFORT:-standard}"
+# The dashboard passes the depth instruction (PRBOT_DEPTH), editable per team on the Skills page.
+# The built-in text here is only a fallback for a direct/older invocation. Only the timeout is
+# decided by the level.
 case "$EFFORT" in
-  quick)
-    TIMEOUT=12m
-    DEPTH="
-Effort level: QUICK. Look only at the diff and the files it directly changes. Report only clear
-correctness bugs, broken logic and obvious runtime failures. Skip style, speculative concerns and
-minor edge cases. Keep findings very few — this is a fast pass."
-    ;;
-  deep)
-    TIMEOUT=40m
-    DEPTH="
-Effort level: DEEP. Before judging, search the whole repository for everything this change affects
-— callers, dependents, shared models, GraphQL queries/mutations/fragments, and any per-DP or
-per-vendor branching — and trace the data flow end to end. Cover correctness, error handling, race
-conditions, edge cases, migration/back-compat, and performance and security implications. Use the
-time the budget allows, but still report only genuine, high-signal findings."
-    ;;
-  *)
-    EFFORT=standard
-    TIMEOUT=25m
-    DEPTH="
-Effort level: STANDARD. Review the changed files and their immediate callers and context. Cover
-correctness, error handling, obvious edge cases and clear risks. Keep findings focused and
-high-confidence."
-    ;;
+  quick) TIMEOUT=12m; FALLBACK="Effort: QUICK — look only at the diff, report clear bugs, be fast.";;
+  deep)  TIMEOUT=40m; FALLBACK="Effort: DEEP — search the whole repo for impact, trace data flow, cover perf/security.";;
+  *)     EFFORT=standard; TIMEOUT=25m; FALLBACK="Effort: STANDARD — changed files + context, correctness and clear risks.";;
 esac
+DEPTH="${PRBOT_DEPTH:-$FALLBACK}"
 echo "$EFFORT" > "$DIR/effort"
 
 status "fetching"
