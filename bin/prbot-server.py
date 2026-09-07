@@ -216,7 +216,7 @@ GH_CLIENT_ID = ENV.get("GH_CLIENT_ID", "")
 GH_CLIENT_SECRET = ENV.get("GH_CLIENT_SECRET", "")
 GH_OAUTH_SCOPES = ENV.get("GH_OAUTH_SCOPES", "")
 PUBLIC_URL = ENV.get("PUBLIC_URL") or (
-    f"https://prbot-{ENV.get('PRBOT_ENV', '')}.{ENV.get('PRBOT_DOMAIN', 'staging.eng.cutanddry.com')}")
+    f"https://robin-{ENV.get('PRBOT_ENV', '')}.{ENV.get('PRBOT_DOMAIN', 'staging.eng.cutanddry.com')}")
 OAUTH_ENABLED = bool(GH_CLIENT_ID and GH_CLIENT_SECRET)
 
 

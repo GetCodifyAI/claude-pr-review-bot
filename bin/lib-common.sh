@@ -25,7 +25,7 @@ PRBOT_DOMAIN="${PRBOT_DOMAIN:-staging.eng.cutanddry.com}"
 # this the value is never empty, so the "did you set PRBOT_ENV?" guard below could never
 # fire and an unset slug shipped Slack buttons pointing at https://prbot-.staging...
 PUBLIC_URL_EXPLICIT="${PUBLIC_URL:+1}"
-PRBOT_HOST="${PRBOT_HOST:-prbot-${PRBOT_ENV}.${PRBOT_DOMAIN}}"
+PRBOT_HOST="${PRBOT_HOST:-robin-${PRBOT_ENV}.${PRBOT_DOMAIN}}"
 PUBLIC_URL="${PUBLIC_URL:-https://$PRBOT_HOST}"
 BASE="$ROOT/repo"                 # base clone; review worktrees branch off it
 WT="$ROOT/wt"

@@ -210,7 +210,9 @@ echo "==> apache proxy"
 # touched, and the app stays reachable on app-<env>. Both live under /etc/apache2, outside
 # the rsync target, so a staging sync cannot remove them.
 # Derived from PRBOT_ENV in .env (sourced above), never hardcoded — see lib-common.sh.
-PRBOT_HOST="${PRBOT_HOST:-prbot-${PRBOT_ENV:-unset}.${PRBOT_DOMAIN:-staging.eng.cutanddry.com}}"
+PRBOT_HOST="${PRBOT_HOST:-robin-${PRBOT_ENV:-unset}.${PRBOT_DOMAIN:-staging.eng.cutanddry.com}}"
+# Old host kept as a ServerAlias so Slack cards + links sent before the rename still resolve.
+PRBOT_HOST_OLD="prbot-${PRBOT_ENV:-unset}.${PRBOT_DOMAIN:-staging.eng.cutanddry.com}"
 [ "${PRBOT_ENV:-}" ] || { echo "   !! PRBOT_ENV is empty in $ROOT/.env — set it, then re-run"; exit 1; }
 sudo a2enmod proxy proxy_http >/dev/null
 sudo a2disconf prbot 2>/dev/null >/dev/null || true   # drop the old global-scope attempt
@@ -218,6 +220,7 @@ sudo rm -f /etc/apache2/conf-available/prbot.conf
 sudo tee /etc/apache2/sites-available/prbot.conf >/dev/null <<EOF
 <VirtualHost *:80>
     ServerName $PRBOT_HOST
+    ServerAlias $PRBOT_HOST_OLD
     ProxyPreserveHost On
     ProxyPass        /prbot http://127.0.0.1:$PORT/prbot
     ProxyPassReverse /prbot http://127.0.0.1:$PORT/prbot
