@@ -107,6 +107,29 @@ REPO = ENV.get("REPO", "GetCodifyAI/cut-and-dry")
 # multi-user layout) are read as theirs, so history survives the upgrade.
 REVIEWER = ENV.get("REVIEWER", "")
 DRY_RUN = ENV.get("DRY_RUN", "1") == "1"
+# Slack, for server-side alerts (e.g. confirming a review was force-stopped). Bot token + channel
+# is preferred (same as the shell scripts); a webhook is the fallback.
+SLACK_WEBHOOK = ENV.get("SLACK_WEBHOOK", "")
+SLACK_BOT_TOKEN = ENV.get("SLACK_BOT_TOKEN", "")
+SLACK_CHANNEL = ENV.get("SLACK_CHANNEL", "")
+
+
+def slack_notify(text):
+    """Best-effort plain-text Slack message from the server. Never raises — a failed notify must
+    not break the action that triggered it."""
+    try:
+        if SLACK_BOT_TOKEN and SLACK_CHANNEL:
+            req = Request("https://slack.com/api/chat.postMessage",
+                          data=json.dumps({"channel": SLACK_CHANNEL, "text": text}).encode(),
+                          headers={"Authorization": f"Bearer {SLACK_BOT_TOKEN}",
+                                   "Content-Type": "application/json; charset=utf-8"})
+            urlopen(req, timeout=8).read()
+        elif SLACK_WEBHOOK:
+            req = Request(SLACK_WEBHOOK, data=json.dumps({"text": text}).encode(),
+                          headers={"Content-Type": "application/json"})
+            urlopen(req, timeout=8).read()
+    except Exception:
+        pass
 
 USERS = ROOT / "users.json"
 SESSION_TTL = 30 * 24 * 3600
@@ -771,26 +794,59 @@ def _kill_group(pidfile):
     """Force-stop a spawned job by its process group. SIGTERM then SIGKILL, because `claude -p`
     traps SIGTERM and keeps running (and keeps the per-PR flock held) — which is exactly why a
     stopped review used to be un-rerunnable: the lock never released, so is_running() stayed True.
-    SIGKILL guarantees the group dies and the lock frees, so a re-run works immediately."""
+    SIGKILL guarantees the group dies and the lock frees. Returns True if the group is confirmed
+    gone, False if something is somehow still alive, None if there was no pid to kill."""
     try:
         pid = int(pidfile.read_text().strip())
     except (OSError, ValueError):
         pidfile.unlink(missing_ok=True)
-        return
+        return None
     for sig in (signal.SIGTERM, signal.SIGKILL):
         try:
             os.killpg(pid, sig)
         except OSError:
             break                                   # group already gone
         time.sleep(0.3)
+    try:
+        os.killpg(pid, 0)                            # signal 0 = liveness probe
+        alive = True
+    except OSError:
+        alive = False
     pidfile.unlink(missing_ok=True)
+    return not alive
 
 
-def stop_review(pr):
-    """Force-stop a running review and leave a 'stopped' status that can be re-run."""
+def _notify_stopped(pr, user, confirmed, runner, kind="review"):
+    """Slack confirmation that a force-stop actually halted the agent (so no Claude tokens keep
+    burning unnoticed) — or a warning if it may not have."""
+    meta = pr_meta(pr)[0]
+    title, url = meta.get("title", f"PR #{pr}"), meta.get("url", ghurl_of(pr))
+    sid = (load_users().get(user) or {}).get("slack_id") if user else ""
+    by = f"<@{sid}>" if sid else (f"`@{user}`" if user else "someone")
+    acct = (f" It was running on `{runner}`'s Claude account." if runner and runner != "shared"
+            else " It was running on the shared box account." if runner else "")
+    if confirmed:
+        text = (f"🛑 {kind.capitalize()} of *<{url}|#{pr} — {title}>* was stopped by {by}. "
+                f"✅ Confirmed the agent is gone and the lock is released — Claude usage has "
+                f"halted.{acct}")
+    else:
+        text = (f"⚠️ Stop requested for the {kind} of *<{url}|#{pr} — {title}>* by {by}, but a "
+                f"process may still be running on the box — please check that Claude usage "
+                f"stopped.{acct}")
+    slack_notify(text)
+
+
+def stop_review(pr, user=""):
+    """Force-stop a running review, verify it actually died, alert Slack, leave a re-runnable
+    'stopped' status."""
     d = STATE / str(pr)
-    _kill_group(d / "pid")
+    runner = (d / "runner").read_text().strip() if (d / "runner").exists() else ""
+    dead = _kill_group(d / "pid")
+    time.sleep(0.2)
     (d / "status").write_text("stopped")
+    confirmed = (dead is not False) and not is_running(pr)
+    _notify_stopped(pr, user, confirmed, runner, "review")
+    return confirmed
 
 
 # --- QA guides -------------------------------------------------------------------------------
@@ -863,10 +919,14 @@ def qa_list():
     return sorted(out, key=lambda x: -x["at"])
 
 
-def stop_qa(pr):
+def stop_qa(pr, user=""):
     d = STATE / str(pr)
-    _kill_group(d / "qa.pid")
+    dead = _kill_group(d / "qa.pid")
+    time.sleep(0.2)
     (d / "qa.status").write_text("stopped")
+    confirmed = (dead is not False) and not qa_running(pr)
+    _notify_stopped(pr, user, confirmed, "", "QA guide")
+    return confirmed
 
 
 def render_qa(md):
@@ -2004,6 +2064,45 @@ def ghurl_of(pr):
     return (pr_meta(pr)[0].get("url") or f"https://github.com/{REPO}/pull/{pr}")
 
 
+# --- stacked PRs -----------------------------------------------------------------------------
+# A "stack" is a chain of open PRs where each one's base branch is the previous one's head branch
+# (Graphite/ghstack style). We walk that chain from a given PR so a reviewer can review the whole
+# stack from one click instead of hunting down each PR.
+_SFIELDS = "number,title,baseRefName,headRefName,url"
+
+
+def _pr_bh(pr):
+    d = gh_json(["pr", "view", str(pr), "--repo", REPO, "--json", _SFIELDS], default=None)
+    return d if isinstance(d, dict) and d.get("number") else None
+
+
+def _pr_first(flag, branch):
+    rows = gh_json(["pr", "list", "--repo", REPO, "--state", "open", flag, branch,
+                    "--json", _SFIELDS, "--limit", "5"], default=[])
+    return rows[0] if isinstance(rows, list) and rows else None
+
+
+def pr_stack(pr):
+    """Open PRs forming the stack that contains `pr`, ordered top (nearest mainline) → bottom.
+    Just [pr] if it isn't stacked. A few gh calls, so call it on demand, not on every page."""
+    info = _pr_bh(pr)
+    if not info:
+        return []
+    chain, seen, cur = [info], {info["number"]}, info
+    for _ in range(15):                          # up: a PR whose head == cur's base is the parent
+        p = _pr_first("--head", cur["baseRefName"])
+        if not p or p["number"] in seen:
+            break
+        chain.insert(0, p); seen.add(p["number"]); cur = p
+    cur = info
+    for _ in range(15):                          # down: a PR whose base == cur's head is the child
+        c = _pr_first("--base", cur["headRefName"])
+        if not c or c["number"] in seen:
+            break
+        chain.append(c); seen.add(c["number"]); cur = c
+    return chain
+
+
 def sev_counts(comments):
     c = {}
     for x in comments:
@@ -2179,6 +2278,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.start_qa(pr, user)
         if route == "/pr":
             return self.detail_page(pr, user, version=(q.get("v") or [""])[0])
+        if route == "/stack":
+            return self.stack_page(pr, user)
+        if route == "/stack/run":
+            if err := verify("stackrun", pr, exp, sig):
+                return self.deny(err)
+            return self.run_stack(pr, user, (q.get("effort") or [""])[0])
         if route in ("/archive", "/unarchive"):
             if err := verify(route[1:], pr, exp, sig):
                 return self.deny(err)
@@ -2226,10 +2331,10 @@ class Handler(BaseHTTPRequestHandler):
         if err := verify(action, pr, exp, sig):
             return self.deny(err)
         if action == "qastop":
-            stop_qa(pr)
+            stop_qa(pr, user)
             return self.redirect(link("qa", pr))
         if action == "stop":
-            stop_review(pr)
+            stop_review(pr, user)
             return self.redirect(link("pr", pr))
         if action == "post":
             return self.do_post_comments(pr, user, form)
@@ -3070,13 +3175,18 @@ class Handler(BaseHTTPRequestHandler):
                   f"<span>·</span><a href='{ghurl}' target=_blank rel=noopener>open on "
                   f"GitHub</a>"
                   f"<span>·</span><a href='/prbot/qa?pr={pr}'>QA guide</a>"
+                  f"<span>·</span><a href='/prbot/stack?pr={pr}'>🔗 Stack</a>"
                 + ("" if active and user in requested_of(meta)
                    else "<span>· not awaiting your review</span>")
                 + "</div>" + self.timeline(pr, user) + banner)
 
         if st == "stopped":
+            halted = not is_running(pr)
             note = ("<div class='banner warn'><span>🛑</span><div><b>Review stopped.</b> You "
-                    "stopped this review before it finished — start a new run below.</div></div>")
+                    "stopped this review before it finished."
+                    + (" ✅ No agent is running — Claude usage has halted." if halted else
+                       " ⚠️ A process may still be running — check the box.")
+                    + " Start a new run below.</div></div>")
             return self.reply(200, shell(f"#{pr}", head + note + (
                 f"<div class='card top'>{self.run_form(pr, user, meta, label='Start review')}"
                 f"<p style='margin-top:10px'><a class=btn href='{link('archive', pr)}'>Archive"
@@ -3432,33 +3542,100 @@ class Handler(BaseHTTPRequestHandler):
                 + (cards or "<div class=card><p class=muted>No findings.</p></div>"))
         return self.reply(200, shell(f"#{pr} · history", body, user=user, active="queue"))
 
-    def start_review(self, pr, user, force=False, effort="", focus=""):
+    def _spawn_review(self, pr, user, effort="", focus=""):
+        """Queue one review (no redirect). Returns True if it actually spawned, False if a review
+        was already running for that PR. Shared by start_review and the stack runner."""
+        pr = str(pr)
         d = STATE / pr
         d.mkdir(parents=True, exist_ok=True)
         touch_user(pr, user)
         # run-review.sh takes a per-PR flock, so a genuine duplicate is impossible — only skip
         # when a review is ACTUALLY running. This lets a finished review be re-run and, crucially,
-        # a stalled one (status stuck at "reviewing" but the process is gone) be recovered; the
-        # old "idle" guard read the stale status and refused, so Re-run appeared to do nothing.
-        if not is_running(pr):
-            meta, _ = pr_meta(pr)
-            eff = effort if effort in EFFORT else autosize_effort(meta)
-            focus = (focus or "").strip()[:2000]
-            archive_review(pr)                      # keep the prior run in history/
-            (d / "effort").write_text(eff)
-            (d / "focus").write_text(focus)
-            (d / "status").write_text("queued")
-            choice, _ = effective_skill(user)
-            env = review_env(user)
-            env["PRBOT_EFFORT"] = eff
-            env["PRBOT_DEPTH"] = effort_depth(eff)
-            env["PRBOT_FOCUS"] = focus
-            env["PRBOT_SKILL_CHOICE"] = choice
-            with open(d / "run.log", "ab") as log:
-                proc = subprocess.Popen([str(BIN / "run-review.sh"), pr], stdout=log,
-                                        stderr=subprocess.STDOUT, start_new_session=True, env=env)
-            (d / "pid").write_text(str(proc.pid))
+        # a stalled one (status stuck at "reviewing" but the process is gone) be recovered.
+        if is_running(pr):
+            return False
+        meta, _ = pr_meta(pr)
+        eff = effort if effort in EFFORT else autosize_effort(meta)
+        focus = (focus or "").strip()[:2000]
+        archive_review(pr)                          # keep the prior run in history/
+        (d / "effort").write_text(eff)
+        (d / "focus").write_text(focus)
+        (d / "status").write_text("queued")
+        choice, _ = effective_skill(user)
+        env = review_env(user)
+        env["PRBOT_EFFORT"] = eff
+        env["PRBOT_DEPTH"] = effort_depth(eff)
+        env["PRBOT_FOCUS"] = focus
+        env["PRBOT_SKILL_CHOICE"] = choice
+        with open(d / "run.log", "ab") as log:
+            proc = subprocess.Popen([str(BIN / "run-review.sh"), pr], stdout=log,
+                                    stderr=subprocess.STDOUT, start_new_session=True, env=env)
+        (d / "pid").write_text(str(proc.pid))
+        return True
+
+    def start_review(self, pr, user, force=False, effort="", focus=""):
+        self._spawn_review(pr, user, effort, focus)
         return self.redirect(link("pr", pr))
+
+    # --- stacked PRs -------------------------------------------------------------------------
+    def stack_page(self, pr, user):
+        stack = pr_stack(pr)
+        head = (f"<nav class=bc><a href='{link('', '')}'>Queue</a><span class=sep>/</span>"
+                f"<a href='{link('pr', pr)}'>#{pr}</a><span class=sep>/</span>"
+                f"<span class=cur>stack</span></nav>"
+                f"<h1 class=prtitle>Stacked review</h1>")
+        if len(stack) <= 1:
+            body = head + ("<div class='card top'><h4 style='margin-top:0'>Not a stack</h4>"
+                           "<p class='muted sm'>This PR isn't stacked on another open PR — its "
+                           "base branch isn't another open PR's branch. "
+                           f"<a href='{link('pr', pr)}'>Back to the review</a>.</p></div>")
+            return self.reply(200, shell(f"#{pr} · stack", body, user=user, active="queue"))
+
+        exp, sig = mint("stackrun", pr, PAGE_TTL)
+        rows = ""
+        for i, it in enumerate(stack):
+            n = str(it["number"])
+            st = pr_state(n, user)
+            pos = "top" if i == 0 else ("bottom" if i == len(stack) - 1 else "")
+            rows += (
+                f"<div class=row><a class=rowlink href='{link('pr', n)}'>"
+                f"<div class=rowtop><span class=num>#{n}</span>"
+                f"<span class=ttl>{html.escape(it.get('title', ''))}</span></div>"
+                f"<div class='muted sm rowsub'><span><code>{html.escape(it.get('baseRefName',''))}"
+                f"</code> ← <code>{html.escape(it.get('headRefName',''))}</code></span>"
+                + (f"<span>{pos} of stack</span>" if pos else "") + "</div></a>"
+                f"<div class=rowmeta>{pill(st)}<a class=chev href='{link('pr', n)}' "
+                f"aria-hidden=true>›</a></div></div>")
+        radios = ""
+        for k in EFFORT_ORDER:
+            name, sub, _ = EFFORT[k]
+            hot = (k == "standard")
+            radios += (f"<label class='eff{' hot' if hot else ''}'>"
+                       f"<input type=radio name=effort value='{k}'{' checked' if hot else ''}>"
+                       f"<span class=effname>{name}</span><span class=effsub>{sub}</span></label>")
+        form = (
+            "<form method=get action='/prbot/stack/run'>"
+            f"<input type=hidden name=pr value='{pr}'>"
+            f"<input type=hidden name=exp value='{exp}'><input type=hidden name=sig value='{sig}'>"
+            "<div class=effort-lbl>Effort (applied to every PR in the stack)</div>"
+            f"<div class=effrow>{radios}</div>"
+            "<div class=runrow><span class=hint style='flex:1'>Queues a review for each PR that "
+            "isn't already running. They run one at a time on the box.</span>"
+            f"<button class='btn primary' type=submit>Review all {len(stack)}</button></div>"
+            "</form>")
+        body = (head + "<p class=lead>These open PRs form a stack (each based on the one above). "
+                "Review the whole stack from here instead of triggering each separately.</p>"
+                f"<div class=list>{rows}</div>"
+                f"<div class='card top'>{form}</div>")
+        return self.reply(200, shell(f"#{pr} · stack", body, user=user, active="queue"))
+
+    def run_stack(self, pr, user, effort):
+        started = 0
+        for it in pr_stack(pr):
+            if self._spawn_review(str(it["number"]), user, effort):
+                started += 1
+        print(f"stack review from #{pr}: queued {started}", flush=True)
+        return self.redirect(f"/prbot/stack?pr={pr}")
 
     # --- QA guides ---------------------------------------------------------------------------
     def start_qa(self, pr, user):
