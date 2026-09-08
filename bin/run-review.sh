@@ -11,7 +11,13 @@ set -uo pipefail
 require_env
 
 PR="${1:?usage: run-review.sh <pr-number>}"
-DIR="$STATE/$PR"
+# Reviews are per reviewer: each person's run + review.json live under users/<actor>, so one
+# reviewer running never touches (or blocks) another's. Only meta.json (PR title/author/size,
+# identical for everyone) stays shared in PRDIR.
+PRDIR="$STATE/$PR"
+ACTOR="${PRBOT_ACTOR:-}"
+DIR="$PRDIR"
+[ -n "$ACTOR" ] && DIR="$PRDIR/users/$ACTOR"
 mkdir -p "$DIR"
 exec 9>"$DIR/.lock"
 flock -n 9 || { echo "review for #$PR already running"; exit 0; }
@@ -22,7 +28,7 @@ fail() { status "failed: $1"; notify_fail "$1"; exit 1; }
 notify_fail() {
   jq -n --arg p "$PR" --arg m "$1" --arg u "https://github.com/$REPO/pull/$PR" '
     {blocks:[{type:"section",text:{type:"mrkdwn",
-      text:("⚠️ Review of *<" + $u + "|#" + $p + ">* failed: " + $m)}}]}' | slack_post "$PR" reply
+      text:("⚠️ Review of *<" + $u + "|#" + $p + ">* failed: " + $m)}}]}' | slack_post "$PR" reply "$ACTOR"
 }
 
 have_free_mem || fail "not enough free memory to start a review"
@@ -61,7 +67,7 @@ url=$(echo "$meta"    | jq -r .url)
 # without this the dashboard would lose the title of a review you just ran.
 echo "$meta" | jq --arg n "$PR" '{number:($n|tonumber), title, url,
      author:.author.login, createdAt, updatedAt, additions, deletions, changedFiles}' \
-  > "$DIR/meta.json"
+  > "$PRDIR/meta.json"
 # Record the head SHA this review ran against, so the dashboard can flag the review as stale
 # once the author pushes new commits (a new head SHA) — without auto-spending tokens to re-run.
 echo "$meta" | jq -r .headRefOid > "$DIR/head"
@@ -106,7 +112,7 @@ LEARN=$(PYTHONPATH="$HERE" ROOT="$ROOT" python3 -c \
 # Which review skill: the clicker's own if they brought one, else the editable team default
 # ($ROOT/skills/_global.md, maintained from the dashboard), else the installed pr-review skill.
 # Record the id next to the review so learnings can score each skill by how many findings get kept.
-ACTOR="${PRBOT_ACTOR:-}"
+# ACTOR is set at the top (it selects the per-user DIR).
 USER_SKILL="$ROOT/skills/$ACTOR.md"
 GLOBAL_SKILL="$ROOT/skills/_global.md"
 # The dashboard's active-skill choice: "own" uses the clicker's skill if present, "team" forces
@@ -225,4 +231,4 @@ jq -n --arg t "$title" --arg u "$url" --arg p "$PR" --arg s "$summary" --arg e "
      style:"primary", url:$l},
     {type:"button", text:{type:"plain_text", text:"Open PR"}, url:$u}]},
   {type:"context", elements:[{type:"mrkdwn",
-    text:"Nothing posted yet — select, edit and post from the dashboard."}]}]}' | slack_post "$PR" reply
+    text:"Nothing posted yet — select, edit and post from the dashboard."}]}]}' | slack_post "$PR" reply "$ACTOR"

@@ -83,17 +83,22 @@ dashboard_link() {
 }
 
 # --- slack -----------------------------------------------------------------------------------
-# slack_post [pr] [root|reply]   (blocks JSON on stdin)
+# slack_post [pr] [root|reply] [login]   (blocks JSON on stdin)
 #
 # With SLACK_BOT_TOKEN + SLACK_CHANNEL set, posts via chat.postMessage — which DOES return a
 # message ts, so the review-ready update threads under the review-request card: a "root" post
-# stores its ts in STATE/<pr>/slack_ts; a "reply" post sends thread_ts from that file. Without a
-# bot token it falls back to the incoming webhook (send-only — a fresh message, no threading).
+# stores its ts; a "reply" post sends thread_ts from that file. Reviews are per reviewer, so a
+# login keys the ts per user (STATE/<pr>/users/<login>/slack_ts) — each reviewer gets their own
+# request card and their review-ready reply threads under it, never under someone else's. Without
+# a login it uses the legacy shared STATE/<pr>/slack_ts. Without a bot token it falls back to the
+# incoming webhook (send-only — a fresh message, no threading).
 slack_post() {
-  local pr="${1:-}" mode="${2:-}" payload; payload=$(cat)
+  local pr="${1:-}" mode="${2:-}" login="${3:-}" payload; payload=$(cat)
   if [ -n "${SLACK_BOT_TOKEN:-}" ] && [ -n "${SLACK_CHANNEL:-}" ]; then
     local ts_file="" thread="" body resp
-    [ -n "$pr" ] && ts_file="$STATE/$pr/slack_ts"
+    if [ -n "$pr" ]; then
+      [ -n "$login" ] && ts_file="$STATE/$pr/users/$login/slack_ts" || ts_file="$STATE/$pr/slack_ts"
+    fi
     [ "$mode" = reply ] && [ -f "$ts_file" ] && thread=$(cat "$ts_file")
     body=$(echo "$payload" | jq --arg ch "$SLACK_CHANNEL" --arg th "$thread" \
       '. + {channel:$ch, text:"Robin PR review"} + (if $th=="" then {} else {thread_ts:$th} end)')

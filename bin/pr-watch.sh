@@ -140,21 +140,24 @@ jq -c '.[]' "$ROOT/queue.json" | while read -r pr; do
   files=$(echo "$pr"  | jq -r .changedFiles)
   detail=$(signed_link pr "$num" 604800)   # 7 days — opening the dashboard costs nothing
   board=$(dashboard_link 604800)
-  who=""; for login in $new; do who+="$(mention "$login") "; done
 
-  echo "==> notifying #$num ($author) $title → $new"
-  jq -n --arg t "$title" --arg u "$url" --arg a "$author" --arg l "$detail" --arg w "$who" \
-        --arg n "$num" --arg s "$adds" --arg d "$dels" --arg f "$files" --arg b "$board" '
-  {blocks: [
-    {type:"section", text:{type:"mrkdwn",
-      text:($w + "review requested\n*<" + $u + "|#" + $n + " — " + $t + ">*\n`@" + $a
-            + "`  ·  +" + $s + " −" + $d + "  ·  " + $f + " files")}},
-    {type:"actions", elements:[
-      {type:"button", text:{type:"plain_text", text:"🔍 Open review"},
-       style:"primary", url:$l},
-      {type:"button", text:{type:"plain_text", text:"Dashboard"}, url:$b},
-      {type:"button", text:{type:"plain_text", text:"Open PR"}, url:$u}]}]}' \
-  | slack_post "$num" root
-
-  for login in $new; do echo "$num:$login" >> "$SEEN"; done
+  # One card per requested reviewer — each mentions only that person and threads their own
+  # review-ready reply, so two reviewers on the same PR never share a ping or a thread.
+  for login in $new; do
+    who="$(mention "$login") "
+    echo "==> notifying #$num ($author) $title → $login"
+    jq -n --arg t "$title" --arg u "$url" --arg a "$author" --arg l "$detail" --arg w "$who" \
+          --arg n "$num" --arg s "$adds" --arg d "$dels" --arg f "$files" --arg b "$board" '
+    {blocks: [
+      {type:"section", text:{type:"mrkdwn",
+        text:($w + "review requested\n*<" + $u + "|#" + $n + " — " + $t + ">*\n`@" + $a
+              + "`  ·  +" + $s + " −" + $d + "  ·  " + $f + " files")}},
+      {type:"actions", elements:[
+        {type:"button", text:{type:"plain_text", text:"🔍 Open review"},
+         style:"primary", url:$l},
+        {type:"button", text:{type:"plain_text", text:"Dashboard"}, url:$b},
+        {type:"button", text:{type:"plain_text", text:"Open PR"}, url:$u}]}]}' \
+    | slack_post "$num" root "$login"
+    echo "$num:$login" >> "$SEEN"
+  done
 done

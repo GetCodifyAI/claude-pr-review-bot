@@ -756,19 +756,19 @@ def autosize_effort(meta):
     return "standard"
 
 
-def review_effort(pr):
+def review_effort(pr, login):
     """The effort a review actually ran at, or "" if unknown/never run."""
     try:
-        v = (STATE / str(pr) / "effort").read_text().strip()
+        v = upath(pr, login, "effort").read_text().strip()
         return v if v in EFFORT else ""
     except OSError:
         return ""
 
 
-def review_usage(pr):
+def review_usage(pr, login):
     """Token usage + model recorded for the last review, or None. Written by run-review.sh from
     Claude's stream-json output; best-effort, so a missing/garbled file just means no usage line."""
-    f = STATE / str(pr) / "usage.json"
+    f = upath(pr, login, "usage.json")
     if not f.exists():
         return None
     try:
@@ -792,10 +792,10 @@ def review_usage(pr):
             "costUsd": float(u.get("cost_usd") or 0)}
 
 
-def review_risk(pr):
+def review_risk(pr, login):
     """Domain-risk flags recorded by run-review.sh (pricing / catalog / dp), as a list."""
     try:
-        return [f for f in (STATE / str(pr) / "risk").read_text().split() if f in RISK_INFO]
+        return [f for f in upath(pr, login, "risk").read_text().split() if f in RISK_INFO]
     except OSError:
         return []
 
@@ -815,16 +815,16 @@ RISK_INFO = {
 RUN_FILES = ("review.json", "effort", "focus", "skill", "runner", "head", "status")
 
 
-def review_focus(pr):
+def review_focus(pr, login):
     try:
-        return (STATE / str(pr) / "focus").read_text().strip()
+        return upath(pr, login, "focus").read_text().strip()
     except OSError:
         return ""
 
 
-def archive_review(pr):
+def archive_review(pr, login):
     """Move the current review into history/<ts>/ so a re-run doesn't lose it. No-op if none."""
-    d = STATE / str(pr)
+    d = udir(pr, login)
     if not (d / "review.json").exists():
         return
     h = d / "history" / str(int(time.time()))
@@ -840,9 +840,11 @@ def archive_review(pr):
     (d / "review.json").unlink(missing_ok=True)
 
 
-def review_history(pr):
+def review_history(pr, login):
     """Past runs, newest first: list of (ts, effort, focus, findings, event)."""
-    hd = STATE / str(pr) / "history"
+    hd = udir(pr, login) / "history"
+    if not hd.is_dir() and login == REVIEWER:
+        hd = STATE / str(pr) / "history"      # legacy shared history for the box owner
     if not hd.is_dir():
         return []
     out = []
@@ -861,8 +863,10 @@ def review_history(pr):
     return out
 
 
-def load_history_review(pr, ts):
-    f = STATE / str(pr) / "history" / str(ts) / "review.json"
+def load_history_review(pr, login, ts):
+    f = udir(pr, login) / "history" / str(ts) / "review.json"
+    if not f.exists() and login == REVIEWER:
+        f = STATE / str(pr) / "history" / str(ts) / "review.json"
     try:
         return json.loads(f.read_text()) if f.exists() else None
     except json.JSONDecodeError:
@@ -918,12 +922,13 @@ def _notify_stopped(pr, user, confirmed, runner, kind="review"):
 def stop_review(pr, user=""):
     """Force-stop a running review, verify it actually died, alert Slack, leave a re-runnable
     'stopped' status."""
-    d = STATE / str(pr)
+    d = udir(pr, user)
     runner = (d / "runner").read_text().strip() if (d / "runner").exists() else ""
     dead = _kill_group(d / "pid")
     time.sleep(0.2)
+    d.mkdir(parents=True, exist_ok=True)
     (d / "status").write_text("stopped")
-    confirmed = (dead is not False) and not is_running(pr)
+    confirmed = (dead is not False) and not is_running(pr, user)
     _notify_stopped(pr, user, confirmed, runner, "review")
     return confirmed
 
@@ -1267,14 +1272,14 @@ def index_html():
 
 
 # --- state --------------------------------------------------------------------------------
-def is_running(pr):
-    """True while run-review.sh holds the per-PR flock.
+def is_running(pr, login):
+    """True while run-review.sh holds this user's per-PR flock.
 
     Exact, unlike guessing from a timestamp: if we can take the lock, nothing is running.
     A review killed mid-flight (systemd used to reap detached children on restart) otherwise
     leaves `status` reading "reviewing" forever.
     """
-    f = STATE / str(pr) / ".lock"
+    f = udir(pr, login) / ".lock"
     if not f.exists():
         return False
     try:
@@ -1321,14 +1326,14 @@ def touch_user(pr, login, name="opened"):
 
 
 def pr_state(pr, login):
-    d = STATE / str(pr)
     if upath(pr, login, "archived").exists():
         return "archived"
     if upath(pr, login, "approved").exists():
         return "approved"
     if upath(pr, login, "posted.json").exists():
         return "posted"
-    s = (d / "status").read_text().strip() if (d / "status").exists() else ""
+    sp = upath(pr, login, "status")
+    s = sp.read_text().strip() if sp.exists() else ""
     if not s:
         return "new"
     if s.startswith("failed"):
@@ -1337,11 +1342,11 @@ def pr_state(pr, login):
         return "stopped"
     if s.startswith(("done", "posted", "dry-run")):
         return "done"
-    return "reviewing" if is_running(pr) else "stalled"
+    return "reviewing" if is_running(pr, login) else "stalled"
 
 
-def load_review(pr):
-    f = STATE / str(pr) / "review.json"
+def load_review(pr, login):
+    f = upath(pr, login, "review.json")
     if not f.exists():
         return None
     try:
@@ -1574,8 +1579,7 @@ def marker(pr, name, login):
 
 def pr_times(pr, login):
     """Every timestamp we know about a PR for this user, for sorting and display."""
-    d = STATE / str(pr)
-    rev_f = d / "review.json"
+    rev_f = upath(pr, login, "review.json")
     return {
         "reviewed": int(rev_f.stat().st_mtime) if rev_f.exists() else 0,
         "posted": marker(pr, "posted.json", login).get("at", 0),
@@ -1770,7 +1774,7 @@ class Handler(BaseHTTPRequestHandler):
     def api_pr(self, pr, user, version):
         touch_user(pr, user)
         if version.isdigit():
-            rev = load_history_review(pr, int(version)) or {}
+            rev = load_history_review(pr, user, int(version)) or {}
             comments = sorted(rev.get("comments", []),
                               key=lambda c: SEV_ORDER.get(c.get("severity"), 9))
             return {"historyView": True, "pr": pr, "ts": int(version),
@@ -1784,10 +1788,11 @@ class Handler(BaseHTTPRequestHandler):
                                   "body": c.get("body", "")} for c in comments]}
         st = pr_state(pr, user)
         meta, active = pr_meta(pr)
-        eff = review_effort(pr)
-        foc = review_focus(pr)
-        runner = (STATE / pr / "runner").read_text().strip() if (STATE / pr / "runner").exists() else ""
-        head_f = STATE / pr / "head"
+        up = lambda name: upath(pr, user, name)  # noqa: E731  per-user review artifacts
+        eff = review_effort(pr, user)
+        foc = review_focus(pr, user)
+        runner = up("runner").read_text().strip() if up("runner").exists() else ""
+        head_f = up("head")
         cur_head = meta.get("head", "")
         stale = bool(head_f.exists() and cur_head and head_f.read_text().strip() != cur_head)
         out = {
@@ -1801,11 +1806,11 @@ class Handler(BaseHTTPRequestHandler):
             "runner": runner,
             "effortBadge": ({"label": EFFORT[eff][0], "hint": EFFORT[eff][2]}
                             if eff and st not in ("reviewing", "queued") else None),
-            "usage": (review_usage(pr) if st not in ("reviewing", "queued") else None),
+            "usage": (review_usage(pr, user) if st not in ("reviewing", "queued") else None),
             "focus": foc,
             "stale": stale,
             "risk": [{"icon": RISK_INFO[f][0], "title": RISK_INFO[f][1], "note": RISK_INFO[f][2]}
-                     for f in review_risk(pr)],
+                     for f in review_risk(pr, user)],
             "timeline": self._timeline_data(pr, user),
             "reviewers": (pr_reviewers(pr) if st not in ("reviewing", "queued") else None),
             "claudeConnected": claude_connected(user),
@@ -1815,10 +1820,10 @@ class Handler(BaseHTTPRequestHandler):
                        "approve": self._tok("approve", pr), "markdone": self._tok("markdone", pr),
                        "archive": self._tok("archive", pr),
                        "unarchive": self._tok("unarchive", pr)},
-            "history": review_history(pr),
+            "history": review_history(pr, user),
         }
         if st == "reviewing":
-            s = (STATE / pr / "status").read_text().strip().lower()
+            s = up("status").read_text().strip().lower() if up("status").exists() else ""
             reff = eff or "standard"
             out["reviewing"] = {
                 "phases": ["Fetching the PR", "Checking out the branch", "Reviewing the diff",
@@ -1829,19 +1834,19 @@ class Handler(BaseHTTPRequestHandler):
                 "effortHint": EFFORT[reff][2], "focus": foc}
             return out
         if st == "stopped":
-            out["stopped"] = {"halted": not is_running(pr)}
+            out["stopped"] = {"halted": not is_running(pr, user)}
             return out
         if st == "stalled":
-            log = STATE / pr / "agent.log"
-            out["stalled"] = {"was": (STATE / pr / "status").read_text().strip(),
+            log = up("agent.log")
+            out["stalled"] = {"was": (up("status").read_text().strip() if up("status").exists() else ""),
                               "tail": (log.read_text()[-400:].strip() if log.exists() else "")}
             return out
-        rev = load_review(pr)
+        rev = load_review(pr, user)
         appr = marker(pr, "approved", user)
         if not rev:
             out["notReviewed"] = True
             if st == "failed":
-                out["failed"] = (STATE / pr / "status").read_text().strip()
+                out["failed"] = up("status").read_text().strip() if up("status").exists() else ""
             if appr.get("at"):
                 out["approved"] = self._approved_data(appr, user)
             return out
@@ -1991,7 +1996,7 @@ class Handler(BaseHTTPRequestHandler):
         for item, active in all_prs(user):
             num = str(item.get("number"))
             st = pr_state(num, user)
-            rev = load_review(num)
+            rev = load_review(num, user)
             cs = sev_counts(rev.get("comments", [])) if rev else {}
             t = pr_times(num, user)
             upd = iso_ts(item.get("updatedAt")) or iso_ts(item.get("createdAt"))
@@ -2169,7 +2174,7 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/post":
             if err := gate("post"):
                 return self.api_json({"error": err}, 403)
-            return self.api_json({"bannerHtml": self._post_result(pr, user, self._post_form(pr, body))})
+            return self.api_json({"bannerHtml": self._post_result(pr, user, self._post_form(pr, user, body))})
         if route == "/api/approve":
             if err := gate("approve"):
                 return self.api_json({"error": err}, 403)
@@ -2178,11 +2183,11 @@ class Handler(BaseHTTPRequestHandler):
             return self.api_json({"bannerHtml": self._approve_result(pr, user, form)})
         return self.api_json({"error": "not found"}, 404)
 
-    def _post_form(self, pr, body):
+    def _post_form(self, pr, user, body):
         """Rebuild the form dict _post_result expects from the JSON post body. path/line/severity
         come from the stored review (not the client) — only selection, body and suggestion are
         the reviewer's to change."""
-        rev = load_review(pr) or {}
+        rev = load_review(pr, user) or {}
         originals = sorted(rev.get("comments", []),
                            key=lambda c: SEV_ORDER.get(c.get("severity"), 9))
         sel = set(body.get("selected") or [])
@@ -2388,18 +2393,18 @@ class Handler(BaseHTTPRequestHandler):
         pr = str(pr)
         if not claude_connected(user):
             return False                            # reviews require the user's own Claude account
-        d = STATE / pr
+        d = udir(pr, user)                          # each reviewer's run + review live under here
         d.mkdir(parents=True, exist_ok=True)
         touch_user(pr, user)
         # run-review.sh takes a per-PR flock, so a genuine duplicate is impossible — only skip
         # when a review is ACTUALLY running. This lets a finished review be re-run and, crucially,
         # a stalled one (status stuck at "reviewing" but the process is gone) be recovered.
-        if is_running(pr):
+        if is_running(pr, user):
             return False
         meta, _ = pr_meta(pr)
         eff = effort if effort in EFFORT else autosize_effort(meta)
         focus = (focus or "").strip()[:2000]
-        archive_review(pr)                          # keep the prior run in history/
+        archive_review(pr, user)                    # keep the prior run in history/
         mdl = model if model in MODEL_KEYS else ""
         (d / "effort").write_text(eff)
         (d / "focus").write_text(focus)
@@ -2458,10 +2463,10 @@ class Handler(BaseHTTPRequestHandler):
         one = lambda k: (form.get(k) or [""])[0]  # noqa: E731
         # Don't post a review that is still being (re)generated — the review.json on disk may be
         # the previous run's, and posting it produces a half-built comment on the real PR.
-        if is_running(pr):
+        if is_running(pr, user):
             return ("<div class='banner warn'><span>⏳</span><div>A review is still running "
                     "for this PR — wait for it to finish, then post.</div></div>")
-        rev = load_review(pr) or {}
+        rev = load_review(pr, user) or {}
         chosen = []
         blank = []
         for i in range(int(one("count") or 0)):
@@ -2495,7 +2500,7 @@ class Handler(BaseHTTPRequestHandler):
         # before the dry-run branch so it learns during the pilot too.
         originals = sorted(rev.get("comments", []),
                            key=lambda c: SEV_ORDER.get(c.get("severity"), 9))
-        skill_f = STATE / pr / "skill"
+        skill_f = upath(pr, user, "skill")
         skill = skill_f.read_text().strip() if skill_f.exists() else "global"
         prbot_learn.record(pr, user, originals, form, skill=skill)
         if not chosen:
@@ -2560,7 +2565,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _approve_result(self, pr, user, form):
         one = lambda k: (form.get(k) or [""])[0]  # noqa: E731
-        rev = load_review(pr) or {}
+        rev = load_review(pr, user) or {}
         blockers = sev_counts(rev.get("comments", [])).get("blocker", 0)
         lgtm = blockers == 0 and rev.get("event") != "REQUEST_CHANGES"
         if not lgtm and not one("ack"):
