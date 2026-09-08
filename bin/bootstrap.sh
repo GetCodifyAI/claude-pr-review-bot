@@ -278,7 +278,7 @@ echo "  $BIN/pr-watch.sh                              # -> Slack card per open r
 echo
 echo "Sign in (you and every teammate):  https://$PRBOT_HOST/prbot/login"
 echo "  Each person pastes their own GitHub PAT (repo scope) + Slack member ID once."
-echo "  Reviews are shared per PR; posting and approving happen as each signed-in user."
+echo "  Each reviewer runs their own review; posting and approving happen as each signed-in user."
 echo
 # Report the ACTUAL value, never a hardcoded assumption — a stale "nothing is written"
 # reassurance is worse than none once someone has flipped it.
