@@ -2466,6 +2466,12 @@ class Handler(BaseHTTPRequestHandler):
         if is_running(pr, user):
             return ("<div class='banner warn'><span>⏳</span><div>A review is still running "
                     "for this PR — wait for it to finish, then post.</div></div>")
+        # Idempotency: a successful real post writes posted.json. Refuse a second one — a
+        # double-click, or a replayed 30-min action token — so a reviewer never lands two
+        # reviews on the same PR. (Dry runs never write it, so they stay repeatable.)
+        if upath(pr, user, "posted.json").exists():
+            return ("<div class='banner ok'><span>✓</span><div>Already posted to GitHub as your "
+                    "review — not posting again.</div></div>")
         rev = load_review(pr, user) or {}
         chosen = []
         blank = []

@@ -392,7 +392,10 @@ function ReviewBody({ data, onDone }: { data: PrData; onDone: () => void }) {
           {rev.posted && (
             <div className="banner ok">
               <span>✓</span>
-              <div>You already posted this to GitHub. Posting again adds a second review.</div>
+              <div>
+                Posted to GitHub as your review.{" "}
+                <a href={data.ghUrl} target="_blank" rel="noreferrer">View on GitHub</a>.
+              </div>
             </div>
           )}
           {shown.map(renderFinding)}
@@ -404,22 +407,24 @@ function ReviewBody({ data, onDone }: { data: PrData; onDone: () => void }) {
               <div className="dbody">{maybe.map(renderFinding)}</div>
             </details>
           )}
-          <div className="bar">
-            <div className="inner">
-              <span className="muted sm">
-                <b>{selected.size}</b> selected ·{" "}
-                {requestChanges ? "requests changes — can block the PR until updated" : "posts as plain comments"}
-              </span>
-              <span className="spacer" />
-              <label className="rqtoggle">
-                <input type="checkbox" checked={requestChanges} onChange={(e) => setRequestChanges(e.target.checked)} />{" "}
-                Request changes instead
-              </label>
-              <button className={"btn " + (requestChanges ? "warn" : "primary")} type="submit" disabled={busy}>
-                {requestChanges ? "Request changes" : rev.postLabel}
-              </button>
+          {!rev.posted && (
+            <div className="bar">
+              <div className="inner">
+                <span className="muted sm">
+                  <b>{selected.size}</b> selected ·{" "}
+                  {requestChanges ? "requests changes — can block the PR until updated" : "posts as plain comments"}
+                </span>
+                <span className="spacer" />
+                <label className="rqtoggle">
+                  <input type="checkbox" checked={requestChanges} onChange={(e) => setRequestChanges(e.target.checked)} />{" "}
+                  Request changes instead
+                </label>
+                <button className={"btn " + (requestChanges ? "warn" : "primary")} type="submit" disabled={busy}>
+                  {requestChanges ? "Request changes" : rev.postLabel}
+                </button>
+              </div>
             </div>
-          </div>
+          )}
         </form>
       )}
 
