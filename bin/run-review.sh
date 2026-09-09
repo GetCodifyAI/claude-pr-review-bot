@@ -154,8 +154,16 @@ $STACK"
 CONTRACT="Do NOT print a table and do NOT post anything to GitHub. Write your findings to
 ./review.json as a single JSON object: {\"event\":\"COMMENT\", \"summary\":\"…\", \"explainer\":
 \"what this PR does\", \"analysis\":\"what you checked and what you dropped\", \"comments\":[{
-\"path\":\"file\", \"line\":123, \"severity\":\"blocker|should-fix|nit|question\", \"body\":
-\"markdown comment\", \"reply_to\":null, \"suggestion\":null, \"confidence\":\"high|medium|low\"}]}.
+\"path\":\"file\", \"line\":123, \"severity\":\"blocker|should-fix|nit|question\", \"title\":
+\"a short plain-language headline a JUNIOR engineer would understand at a glance — no jargon, no
+symbol names, say what is wrong in everyday words\", \"impact\":\"ONE plain sentence: who is
+affected and what actually breaks for them (a buyer, an ops user, a DP) — the real-world
+consequence, not the code mechanism\", \"body\":
+\"the detailed technical explanation and the concrete failing scenario, in markdown — this is the
+comment posted to GitHub, so write it for the PR author\", \"reply_to\":null, \"suggestion\":null,
+\"confidence\":\"high|medium|low\"}]}. The title and impact are shown to a reviewer skimming the
+dashboard so they can understand and sign off on each finding WITHOUT reading the whole PR — keep
+them jargon-free and self-contained; the body stays the full technical comment.
 Set \"confidence\" to how sure you are the finding is real and worth raising — low-confidence
 findings are shown to the reviewer in a separate collapsed \"maybe\" tray, so use it honestly
 rather than dropping a borderline point. When a finding has a concrete,

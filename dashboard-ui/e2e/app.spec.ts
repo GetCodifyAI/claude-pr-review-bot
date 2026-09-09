@@ -44,7 +44,7 @@ test.describe("signed in", () => {
     await page.goto(`/pr?pr=${PR}`);
     await expect(page.locator("h1.prtitle")).toContainText(`#${PR}`);
     await expect(page.locator("h1.prtitle")).toContainText(/lead-time badge/i);
-    await expect(page.getByText(/guard against a null vendor/i).first()).toBeVisible();
+    await expect(page.getByText(/can crash the lead-time badge/i).first()).toBeVisible();
   });
 
   test("insights dashboard renders from the rollup api", async ({ page }) => {

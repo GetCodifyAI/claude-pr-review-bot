@@ -695,3 +695,14 @@ margin-bottom:14px}
 .hbar-val{color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap;font-size:.78rem}
 .agreebig{font-size:2.3rem;font-weight:700;font-variant-numeric:tabular-nums;line-height:1;
 margin-bottom:8px}
+
+/* Finding readability — plain title + impact, technical detail collapsed */
+.ftitle{font-size:.95rem;font-weight:600;line-height:1.4;margin:8px 2px 0}
+.fimpact{font-size:.84rem;color:var(--dim);line-height:1.5;margin:5px 2px 0}
+.fimpact-l{font-weight:600;color:var(--fg);margin-right:4px}
+.fdetail{margin-top:9px}
+.fdetail>summary{cursor:pointer;font-size:.8rem;color:var(--blue);list-style:none;
+padding:3px 0;user-select:none}
+.fdetail>summary::-webkit-details-marker{display:none}
+.fdetail>summary::before{content:"▸ ";color:var(--faint)}
+.fdetail[open]>summary::before{content:"▾ "}

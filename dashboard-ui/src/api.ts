@@ -92,6 +92,8 @@ export interface Finding {
   body: string;
   suggestion: string;
   low: boolean;
+  title: string;
+  impact: string;
   agreement?: { confirmed: boolean; n: number; by: string[]; differ: string } | null;
 }
 

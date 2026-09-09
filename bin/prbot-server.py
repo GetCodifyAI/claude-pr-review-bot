@@ -2029,6 +2029,19 @@ class Handler(BaseHTTPRequestHandler):
         return {"at": fmt_date(appr["at"]), "ago": ago(appr["at"]), "manual": bool(appr.get("manual")),
                 "body": appr.get("body", ""), "user": user}
 
+    @staticmethod
+    def _fallback_title(c):
+        """A plain title for reviews written before title/impact existed: first line of the body,
+        stripped of markdown, or the location."""
+        body = (c.get("body") or "").strip()
+        if body:
+            line = body.splitlines()[0]
+            line = re.sub(r"[`*_#>]", "", line).strip()
+            if line:
+                return line[:90] + ("…" if len(line) > 90 else "")
+        loc = c.get("path", "?")
+        return f"{loc}:{c.get('line')}" if c.get("line") not in (None, "?") else loc
+
     def _review_data(self, pr, user, rev, appr):
         ev = rev.get("event", "COMMENT")
         comments = sorted(rev.get("comments", []),
@@ -2045,6 +2058,8 @@ class Handler(BaseHTTPRequestHandler):
                              "thread": (c["reply_to"] if c.get("reply_to") else None),
                              "body": c.get("body", ""), "suggestion": c.get("suggestion", "") or "",
                              "low": c.get("confidence") == "low",
+                             "title": c.get("title") or self._fallback_title(c),
+                             "impact": (c.get("impact") or "").strip(),
                              "agreement": conv_tags.get(prbot_agree._cid(c))})
         data = {
             "event": ev, "summary": rev.get("summary", ""),

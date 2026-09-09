@@ -302,6 +302,14 @@ function FindingCard({
         </span>
         <span className="thread">{f.thread ? `↩ reply to ${f.thread}` : "new thread"}</span>
       </div>
+      {f.title && <div className="ftitle">{f.title}</div>}
+      {f.impact && (
+        <div className="fimpact">
+          <span className="fimpact-l">Why it matters</span> {f.impact}
+        </div>
+      )}
+      <details className="fdetail">
+        <summary>Details &amp; edit — this is the comment posted to GitHub</summary>
       <div className="fbody">
         <MdEditor value={body} onChange={onBody} />
         {f.suggestion && (
@@ -313,6 +321,7 @@ function FindingCard({
           </div>
         )}
       </div>
+      </details>
     </div>
   );
 }
