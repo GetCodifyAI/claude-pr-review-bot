@@ -15,6 +15,7 @@ export const NavIcon: Record<string, React.ReactNode> = {
     <rect x="14" y="14" width="7" height="7" rx="1.5" />
     <rect x="3" y="14" width="7" height="7" rx="1.5" />
   </>),
+  dashboard: svg(<><path d="M3 3v18h18" /><path d="M8 17v-5M13 17V8M18 17v-8" /></>),
   how: svg(<><circle cx="12" cy="12" r="9" /><path d="M9.6 9.2a2.5 2.5 0 1 1 3.4 2.3c-.8.5-1 .9-1 1.7M12 17h.01" /></>),
 };
 

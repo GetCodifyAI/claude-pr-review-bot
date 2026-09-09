@@ -47,10 +47,10 @@ test.describe("signed in", () => {
     await expect(page.getByText(/guard against a null vendor/i).first()).toBeVisible();
   });
 
-  test("trust dashboard renders from the rollup api", async ({ page }) => {
+  test("insights dashboard renders from the rollup api", async ({ page }) => {
     await page.goto("/dashboard");
-    await expect(page.getByRole("heading", { name: /trust dashboard/i })).toBeVisible();
-    await expect(page.getByText(/reviews run/i)).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^insights$/i })).toBeVisible();
+    await expect(page.getByText(/review activity/i)).toBeVisible();
     await expect(page.getByText(/agreement across reviewers/i)).toBeVisible();
   });
 
@@ -92,6 +92,9 @@ test.describe("signed in", () => {
 
   test("command palette (\u2318K) reviews a PR by number", async ({ page }) => {
     await page.goto("/");
+    // Wait for the app to mount before the global ⌘K listener exists (else the keypress is lost
+    // on a cold start and the palette never opens).
+    await expect(page.getByRole("heading", { name: /review queue/i })).toBeVisible();
     await page.keyboard.press("ControlOrMeta+k");
     await expect(page.locator(".cmdk")).toBeVisible();
     await page.locator(".cmdk-in").fill(PR);

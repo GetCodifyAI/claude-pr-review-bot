@@ -292,18 +292,27 @@ export interface HowData {
   tabs: { key: string; label: string; desc: string }[];
 }
 
+export interface RollupSeriesPoint {
+  ts: number;
+  date: string;
+  reviews: number;
+  tokens: number;
+  kept: number;
+  edited: number;
+  dropped: number;
+}
 export interface RollupData {
   generatedAt: number;
   reviews: { total: number; week: number };
   prs: number;
   reviewers: { login: string; runs: number; week: number; tokens: number }[];
   tokens: { total: number; week: number };
-  keep: {
-    allTime: { kept: number; edited: number; dropped: number; rate: number | null };
-    week: { kept: number; edited: number; dropped: number; rate: number | null };
-  };
+  keep: { allTime: { kept: number; edited: number; dropped: number; rate: number | null } };
+  severity: { blocker: number; "should-fix": number; nit: number; question: number };
+  models: { model: string; runs: number; tokens: number }[];
   agreement: { multiReviewerPRs: number; confirmedFindings: number; avgRate: number | null };
   cycle: { medianReviewToPostSec: number | null; n: number };
+  series: RollupSeriesPoint[];
 }
 
 export const api = {

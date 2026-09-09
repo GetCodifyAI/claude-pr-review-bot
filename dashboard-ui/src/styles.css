@@ -652,24 +652,6 @@ text-decoration:underline}
 padding:10px 13px;margin-bottom:12px;font-size:.83rem;color:var(--dim);line-height:1.55}
 .conv-summary b{color:var(--fg)}
 
-/* Phase 4 — trust dashboard */
-.rollhead{font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);
-font-weight:700;margin:20px 0 9px}
-.rollgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
-.rollcard{border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:14px 15px}
-.rollcard.good{border-color:rgba(52,168,110,.35)}
-.rollcard.accent{border-color:rgba(124,131,240,.4)}
-.rolllabel{font-size:.8rem;color:var(--dim);margin-bottom:6px}
-.rollval{font-size:1.7rem;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
-.rollsub{font-size:.76rem;color:var(--faint);margin-top:5px;line-height:1.4}
-.rollnote{margin-top:9px;line-height:1.55}
-.rolltablewrap{overflow-x:auto;padding:0}
-.rolltable{width:100%;border-collapse:collapse;font-size:.86rem}
-.rolltable th,.rolltable td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line2)}
-.rolltable th{font-size:.74rem;text-transform:uppercase;letter-spacing:.04em;color:var(--faint)}
-.rolltable td{font-variant-numeric:tabular-nums}
-.rolltable tr:last-child td{border-bottom:0}
-
 /* Phase 5 — team skill revision history */
 .skillhist{margin-top:14px;border-top:1px solid var(--line2);padding-top:11px}
 .skillhist-h{font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);
@@ -679,3 +661,37 @@ font-weight:700;margin-bottom:8px}
 border-left:2px solid var(--line);padding-left:10px}
 .skillhist-msg{color:var(--fg)}
 .skillhist-meta{color:var(--faint);white-space:nowrap;font-size:.78rem}
+
+/* Insights dashboard */
+.insights-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;
+flex-wrap:wrap;margin-bottom:16px}
+.rangepills{display:flex;gap:4px;background:var(--panel2);border:1px solid var(--line);
+border-radius:10px;padding:3px}
+.rangepill{background:none;border:0;color:var(--dim);font:inherit;font-size:.82rem;cursor:pointer;
+padding:6px 12px;border-radius:7px}
+.rangepill.on{background:var(--panel);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.25)}
+.kpirow{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;
+margin-bottom:16px}
+.kpi{border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:14px 16px}
+.kpi-l{font-size:.78rem;color:var(--dim);margin-bottom:7px}
+.kpi-v{font-size:1.85rem;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.05}
+.kpi-s{font-size:.74rem;color:var(--faint);margin-top:5px}
+.panel{border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:15px 16px;
+margin-bottom:14px}
+.panel-h{font-size:.82rem;font-weight:600;color:var(--dim);margin-bottom:12px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:760px){.grid2{grid-template-columns:1fr}}
+.chart{width:100%;height:auto;display:block}
+.donutwrap{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.legend{display:flex;flex-direction:column;gap:6px;font-size:.83rem}
+.legrow{display:flex;align-items:center;gap:7px;color:var(--dim)}
+.legrow b{color:var(--fg)}
+.legdot{width:10px;height:10px;border-radius:3px;display:inline-block}
+.hbars{display:flex;flex-direction:column;gap:9px}
+.hbar{display:grid;grid-template-columns:110px 1fr auto;align-items:center;gap:10px;font-size:.83rem}
+.hbar-label{color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hbar-track{background:var(--panel2);border-radius:6px;height:14px;overflow:hidden}
+.hbar-fill{height:100%;border-radius:6px;min-width:2px;transition:width .3s}
+.hbar-val{color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap;font-size:.78rem}
+.agreebig{font-size:2.3rem;font-weight:700;font-variant-numeric:tabular-nums;line-height:1;
+margin-bottom:8px}
