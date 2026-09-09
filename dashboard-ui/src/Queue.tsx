@@ -19,7 +19,21 @@ const EMPTY: Record<string, [string, string, string]> = {
 };
 
 
-function Row({ row }: { row: QueueRow }) {
+function Row({ row, onChange }: { row: QueueRow; onChange: () => void }) {
+  const [busy, setBusy] = useState(false);
+  async function toggleArchive(e: React.MouseEvent) {
+    // The button sits outside the row's <Link>, but guard anyway so a click never navigates.
+    e.preventDefault();
+    e.stopPropagation();
+    if (busy) return;
+    setBusy(true);
+    try {
+      await api.archive(row.num, row.archiveToken, row.archived ? "unarchive" : "archive");
+      onChange();
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <div className="row">
       <Link className="rowlink" to={`/pr?pr=${row.num}`}>
@@ -46,7 +60,15 @@ function Row({ row }: { row: QueueRow }) {
       </Link>
       <div className="rowmeta">
         <span className={"pill " + row.state}>{row.state}</span>
-        <span className="rowact">{row.archived ? "restore" : "archive"}</span>
+        <button
+          type="button"
+          className="rowact"
+          onClick={toggleArchive}
+          disabled={busy}
+          aria-label={row.archived ? `Restore #${row.num}` : `Archive #${row.num}`}
+        >
+          {busy ? "…" : row.archived ? "restore" : "archive"}
+        </button>
         <Link className="chev" to={`/pr?pr=${row.num}`} aria-hidden="true">
           ›
         </Link>
@@ -62,6 +84,7 @@ export function Queue({ me }: { me: Me }) {
   const [data, setData] = useState<QueueData | null>(null);
   const [q, setQ] = useState("");
   const [rv, setRv] = useState("");
+  const [nonce, setNonce] = useState(0);
 
   useEffect(() => {
     let live = true;
@@ -69,7 +92,7 @@ export function Queue({ me }: { me: Me }) {
     return () => {
       live = false;
     };
-  }, [tab, sort]);
+  }, [tab, sort, nonce]);
 
   const filtered = useMemo(() => {
     if (!data) return [];
@@ -177,7 +200,7 @@ export function Queue({ me }: { me: Me }) {
       {filtered.length > 0 ? (
         <div className="list" id="qlist" data-tour="queuelist">
           {filtered.map((r) => (
-            <Row key={r.num} row={r} />
+            <Row key={r.num} row={r} onChange={() => setNonce((n) => n + 1)} />
           ))}
         </div>
       ) : q ? (

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { PR } from "./fixture";
+import { PR, PR2 } from "./fixture";
 
 // Unauthenticated: the SPA shell mounts and shows the login screen (no session cookie).
 test.describe("signed out", () => {
@@ -19,6 +19,22 @@ test.describe("signed in", () => {
     await expect(page.getByRole("heading", { name: /review queue/i })).toBeVisible();
     await expect(page.getByText(`#${PR}`)).toBeVisible();
     await expect(page.getByText(/lead-time badge/i)).toBeVisible();
+  });
+
+  test("archive button works: moves a PR to Archived and restores it", async ({ page }) => {
+    const rowFor = (num: string) => page.locator(".row", { hasText: `#${num}` });
+    await page.goto("/prbot/?tab=reviewed");
+    await expect(rowFor(PR2)).toBeVisible();
+
+    // Archive it — the row leaves the Reviewed tab.
+    await rowFor(PR2).getByRole("button", { name: new RegExp(`archive #${PR2}`, "i") }).click();
+    await expect(rowFor(PR2)).toHaveCount(0);
+
+    // It now shows under Archived with a Restore action.
+    await page.goto("/prbot/?tab=archived");
+    await expect(rowFor(PR2)).toBeVisible();
+    await rowFor(PR2).getByRole("button", { name: new RegExp(`restore #${PR2}`, "i") }).click();
+    await expect(rowFor(PR2)).toHaveCount(0);
   });
 
   test("opens the PR detail with its drafted findings", async ({ page }) => {

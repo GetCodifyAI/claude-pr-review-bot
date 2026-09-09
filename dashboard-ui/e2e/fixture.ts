@@ -14,6 +14,7 @@ export const AUTH_STATE = join(HERE, ".auth.json");
 export const SECRET = "e2e-fixed-test-secret-not-for-production";
 export const USER = "wimukthi-sl";
 export const PR = "38849";
+export const PR2 = "38850"; // dedicated archive-test target — no other test touches it
 export const PORT = 8988;
 
 function write(path: string, body: string) {
@@ -61,7 +62,34 @@ export function buildFixture() {
         createdAt: "2026-05-01T10:00:00Z",
         updatedAt: "2026-05-02T10:00:00Z",
       },
+      {
+        number: Number(PR2),
+        title: "Cache vendor lead times",
+        url: `https://github.com/GetCodifyAI/cut-and-dry/pull/${PR2}`,
+        additions: 12,
+        deletions: 3,
+        changedFiles: 2,
+        requested: [USER],
+        author: "teammate",
+        isBot: false,
+        isDraft: false,
+        head: "feedfacecafe",
+        createdAt: "2026-05-03T10:00:00Z",
+        updatedAt: "2026-05-04T10:00:00Z",
+      },
     ]),
+  );
+
+  write(join(FIXTURE, "state", PR2, "status"), "done");
+  write(
+    join(FIXTURE, "state", PR2, "review.json"),
+    JSON.stringify({
+      event: "COMMENT",
+      summary: "Caches vendor lead times. Looks fine.",
+      explainer: "",
+      analysis: "",
+      comments: [],
+    }),
   );
 
   write(join(FIXTURE, "state", PR, "status"), "done");

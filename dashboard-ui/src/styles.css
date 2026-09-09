@@ -326,7 +326,9 @@ box-shadow:var(--shadow);margin-top:16px}
 .rowmeta{display:flex;align-items:center;gap:12px;flex:none;padding-right:14px}
 .rowmeta .pill{min-width:78px;justify-content:center}
 .rowact{font-size:.78rem;color:var(--dim);padding:6px 13px;border:1px solid var(--line2);
-border-radius:9px;white-space:nowrap;transition:background .13s,color .13s}
+border-radius:9px;white-space:nowrap;background:transparent;cursor:pointer;font-family:inherit;
+transition:background .13s,color .13s}
+.rowact:disabled{cursor:default;opacity:.6}
 .rowact:hover{color:var(--fg);background:var(--panel2)}
 .rowlink{display:block;flex:1;min-width:0;padding:15px 4px 15px 18px}
 .rowlink:hover{text-decoration:none}
