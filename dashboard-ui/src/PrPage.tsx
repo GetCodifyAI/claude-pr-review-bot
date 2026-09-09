@@ -288,6 +288,15 @@ function FindingCard({
         <label>
           <span className={"pill " + f.severity}>{f.sevLabel}</span>
         </label>
+        {f.agreement?.confirmed ? (
+          <span className="agree ok" title={`Also raised by ${f.agreement.by.join(", ")}`}>
+            ✓ Confirmed by {f.agreement.n} independent reviews ({f.agreement.differ})
+          </span>
+        ) : (
+          f.agreement && (
+            <span className="agree solo">Only flagged by your run</span>
+          )
+        )}
         <span className="loc">
           {f.path}:{f.line}
         </span>
@@ -418,6 +427,14 @@ function ReviewBody({ data, onDone }: { data: PrData; onDone: () => void }) {
       )}
 
       <h2>Findings ({rev.count})</h2>
+      {rev.convergence && rev.convergence.total > 0 && (
+        <div className="conv-summary">
+          <b>{rev.convergence.confirmed}</b> of {rev.convergence.total} finding(s) confirmed by
+          independent reviews ({rev.convergence.rate}% agreement across {rev.convergence.nRuns}{" "}
+          reviewers on this commit). A finding only counts as confirmed when a reviewer using a
+          different skill/model/effort raised it too — a signal to build on, not a score.
+        </div>
+      )}
       {rev.count === 0 ? (
         <div className="card">
           <p className="muted">No findings — nothing to post.</p>

@@ -44,6 +44,7 @@ from urllib.parse import parse_qs, quote, urlencode, urlparse
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+import prbot_agree
 import prbot_assets
 import prbot_diff
 import prbot_howimg
@@ -893,6 +894,55 @@ def others_on_head(pr, exclude_login):
                     "skill": ("team default" if skl == "global" else f"{skl}'s skill"),
                     "skillKey": skl, "when": ago(when) if when else ""})
     return out
+
+
+def agreement_runs(pr, head):
+    """Completed reviews on this exact head across all reviewers — the input to convergence
+    scoring (Phase 3). Excludes in-flight/failed runs."""
+    base = STATE / str(pr) / "users"
+    runs = []
+    if not head or not base.is_dir():
+        return runs
+    for d in sorted(base.iterdir()):
+        if not d.is_dir():
+            continue
+        hf, rf = d / "head", d / "review.json"
+        if not (hf.exists() and rf.exists() and hf.read_text().strip() == head):
+            continue
+        if pr_state(str(pr), d.name) in ("reviewing", "queued", "failed", "stopped"):
+            continue
+        try:
+            rev = json.loads(rf.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        rd = lambda n: ((d / n).read_text().strip() if (d / n).exists() else "")
+        runs.append({"login": d.name, "effort": rd("effort"), "model": rd("model"),
+                     "skill": rd("skill") or "global", "focus": rd("focus"),
+                     "comments": rev.get("comments", []) or []})
+    return runs
+
+
+def convergence(pr, head, viewer):
+    """(per_finding_tags_by_cid, rate_summary, n_runs) for `viewer` on this head. Writes a small
+    per-head index for the Phase 4 dashboard. Returns ({}, None, n) when fewer than 2 runs exist."""
+    runs = agreement_runs(pr, head)
+    n = len(runs)
+    if n < 2:
+        return {}, None, n
+    idx = next((i for i, r in enumerate(runs) if r["login"] == viewer), None)
+    clusters = prbot_agree.cluster(runs)
+    ar = prbot_agree.rate(clusters)
+    try:                                            # persist an index for the rollup dashboard
+        ad = STATE / str(pr) / "agreement"
+        ad.mkdir(parents=True, exist_ok=True)
+        (ad / f"{head}.json").write_text(json.dumps({
+            "head": head, "at": int(time.time()), **ar,
+            "runs": [{"login": r["login"], "skill": r["skill"], "model": r["model"],
+                      "effort": r["effort"]} for r in runs]}))
+    except OSError:
+        pass
+    tags = prbot_agree.tags_for(idx, runs, clusters) if idx is not None else {}
+    return tags, ar, n
 
 
 def review_history(pr, login):
@@ -1933,6 +1983,8 @@ class Handler(BaseHTTPRequestHandler):
         comments = sorted(rev.get("comments", []),
                           key=lambda c: SEV_ORDER.get(c.get("severity"), 9))
         cs = sev_counts(comments)
+        head = pr_meta(pr)[0].get("head", "")
+        conv_tags, conv_rate, conv_n = convergence(pr, head, user)   # Phase 3
         findings = []
         for i, c in enumerate(comments):
             findings.append({"i": i, "severity": c.get("severity", "nit"),
@@ -1941,7 +1993,8 @@ class Handler(BaseHTTPRequestHandler):
                              "path": c.get("path", "?"), "line": c.get("line", "?"),
                              "thread": (c["reply_to"] if c.get("reply_to") else None),
                              "body": c.get("body", ""), "suggestion": c.get("suggestion", "") or "",
-                             "low": c.get("confidence") == "low"})
+                             "low": c.get("confidence") == "low",
+                             "agreement": conv_tags.get(prbot_agree._cid(c))})
         data = {
             "event": ev, "summary": rev.get("summary", ""),
             "explainer": rev.get("explainer", ""), "analysis": rev.get("analysis", ""),
@@ -1951,6 +2004,9 @@ class Handler(BaseHTTPRequestHandler):
             "posted": upath(pr, user, "posted.json").exists(),
             "postLabel": "Post selected" + (" (dry run)" if DRY_RUN else " to GitHub"),
             "reused": upath(pr, user, "cached").exists(),
+            "convergence": ({"rate": conv_rate["rate"], "confirmed": conv_rate["confirmed"],
+                             "total": conv_rate["total"], "nRuns": conv_n}
+                            if conv_rate else None),
         }
         if appr.get("at"):
             data["approved"] = self._approved_data(appr, user)

@@ -643,3 +643,11 @@ margin-bottom:14px}
 .nudge-cta{font-size:.82rem;color:var(--dim);line-height:1.5}
 .linkbtn{background:none;border:0;color:var(--blue);cursor:pointer;font:inherit;padding:0;
 text-decoration:underline}
+
+/* Phase 3 — convergence tags */
+.agree{font-size:.72rem;padding:2px 8px;border-radius:20px;white-space:nowrap;font-weight:600}
+.agree.ok{background:rgba(52,168,110,.14);color:#2f9e63;border:1px solid rgba(52,168,110,.3)}
+.agree.solo{background:var(--panel2);color:var(--dim);border:1px solid var(--line2);font-weight:500}
+.conv-summary{border:1px solid var(--line);background:var(--panel2);border-radius:11px;
+padding:10px 13px;margin-bottom:12px;font-size:.83rem;color:var(--dim);line-height:1.55}
+.conv-summary b{color:var(--fg)}

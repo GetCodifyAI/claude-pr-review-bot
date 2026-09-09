@@ -92,6 +92,7 @@ export interface Finding {
   body: string;
   suggestion: string;
   low: boolean;
+  agreement?: { confirmed: boolean; n: number; by: string[]; differ: string } | null;
 }
 
 export interface ApprovedData {
@@ -113,6 +114,7 @@ export interface ReviewData {
   posted: boolean;
   postLabel: string;
   reused?: boolean;
+  convergence?: { rate: number | null; confirmed: number; total: number; nRuns: number } | null;
   approve?: { lgtm: boolean; blockers: number; defaultMsg: string };
   approved?: ApprovedData;
 }
