@@ -94,6 +94,7 @@ export interface Finding {
   low: boolean;
   title: string;
   impact: string;
+  structured: boolean;
   agreement?: { confirmed: boolean; n: number; by: string[]; differ: string } | null;
 }
 

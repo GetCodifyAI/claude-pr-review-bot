@@ -2120,6 +2120,8 @@ class Handler(BaseHTTPRequestHandler):
                              "low": c.get("confidence") == "low",
                              "title": c.get("title") or self._fallback_title(c),
                              "impact": (c.get("impact") or "").strip(),
+                             "structured": bool((c.get("title") or "").strip()
+                                                and (c.get("impact") or "").strip()),
                              "agreement": conv_tags.get(prbot_agree._cid(c))})
         data = {
             "event": ev, "summary": rev.get("summary", ""),

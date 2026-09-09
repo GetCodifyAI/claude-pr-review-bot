@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   api,
   type Finding,
+  type ReviewData,
   type Me,
   type PrData,
   type ReviewersData,
@@ -322,11 +323,15 @@ function FindingCard({
         </span>
         <span className="thread">{f.thread ? `↩ reply to ${f.thread}` : "new thread"}</span>
       </div>
-      {f.title && <div className="ftitle">{f.title}</div>}
-      {f.impact && (
-        <div className="fimpact">
-          <span className="fimpact-l">Why it matters</span> {f.impact}
-        </div>
+      {f.structured && (
+        <>
+          <div className="ftitle">{f.title}</div>
+          {f.impact && (
+            <div className="fimpact">
+              <span className="fimpact-l">Why it matters</span> {f.impact}
+            </div>
+          )}
+        </>
       )}
       {!exp && (
         <button type="button" className="explainbtn" onClick={explain} disabled={expLoading}>
@@ -340,22 +345,44 @@ function FindingCard({
           <Md className="dbody">{exp}</Md>
         </div>
       )}
-      <details className="fdetail">
-        <summary>Details &amp; edit — this is the comment posted to GitHub</summary>
-      <div className="fbody">
-        <MdEditor value={body} onChange={onBody} />
-        {f.suggestion && (
-          <div className="sugg">
-            <div className="sugglabel">💡 Suggested change — the author can apply this in one click on GitHub</div>
-            <pre className="suggin-pre">
-              <code>{f.suggestion}</code>
-            </pre>
-          </div>
-        )}
-      </div>
-      </details>
+      {f.structured ? (
+        <details className="fdetail">
+          <summary>Details &amp; edit — this is the comment posted to GitHub</summary>
+          <FindingBody body={body} onBody={onBody} suggestion={f.suggestion} />
+        </details>
+      ) : (
+        <FindingBody body={body} onBody={onBody} suggestion={f.suggestion} />
+      )}
     </div>
   );
+}
+
+function FindingBody({ body, onBody, suggestion }:
+  { body: string; onBody: (v: string) => void; suggestion: string }) {
+  return (
+    <div className="fbody">
+      <MdEditor value={body} onChange={onBody} />
+      {suggestion && (
+        <div className="sugg">
+          <div className="sugglabel">💡 Suggested change — the author can apply this in one click on GitHub</div>
+          <pre className="suggin-pre">
+            <code>{suggestion}</code>
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function verdict(rev: ReviewData) {
+  const cnt = (k: string) => rev.chips.find((c) => c.kind === k)?.n ?? 0;
+  const b = cnt("blocker");
+  const f = cnt("should-fix");
+  if (rev.event === "REQUEST_CHANGES") return { ico: "🔴", text: "Changes requested", cls: "v-bad" };
+  if (b) return { ico: "🔴", text: `${b} blocker${b > 1 ? "s" : ""} to resolve before merge`, cls: "v-bad" };
+  if (f) return { ico: "🟡", text: `${f} thing${f > 1 ? "s" : ""} to fix before merge`, cls: "v-warn" };
+  if (rev.count === 0) return { ico: "🟢", text: "Looks good — nothing to fix", cls: "v-good" };
+  return { ico: "🟢", text: "Looks good — comments only, nothing blocking", cls: "v-good" };
 }
 
 function ReviewBody({ data, onDone }: { data: PrData; onDone: () => void }) {
@@ -432,39 +459,47 @@ function ReviewBody({ data, onDone }: { data: PrData; onDone: () => void }) {
       )}
       {banner && <Banner html={banner} />}
 
-      <h2>Assessment</h2>
       {rev.reused && (
         <div className="banner ok">
           <span>♻️</span>
           <div>Reused your earlier run of this exact configuration on this commit — 0 new tokens.</div>
         </div>
       )}
-      <div className="card">
-        <div className="meta">
-          <span className={"pill " + (rev.event === "REQUEST_CHANGES" ? "blocker" : "posted")}>{rev.event}</span>
-          <span className="muted sm">the agent's read — comments post as a plain review either way</span>
-        </div>
-        <Md>{rev.summary}</Md>
-        {rev.chips.length > 0 && (
-          <div className="chips">
-            {rev.chips.map((c) => (
-              <span key={c.kind} className={"pill " + c.kind}>
-                {c.n} {c.label}
-              </span>
-            ))}
+      {(() => {
+        const v = verdict(rev);
+        return (
+          <div className={"verdict " + v.cls}>
+            <span className="verdict-ico">{v.ico}</span>
+            <div className="verdict-main">
+              <div className="verdict-t">{v.text}</div>
+              <div className="verdict-sub">the agent's read · comments post as a plain review either way</div>
+            </div>
+            {rev.chips.length > 0 && (
+              <div className="verdict-chips">
+                {rev.chips.map((c) => (
+                  <span key={c.kind} className={"pill " + c.kind}>
+                    {c.n} {c.label}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
-        )}
-      </div>
-
+        );
+      })()}
+      {rev.summary && (
+        <div className="assess-summary">
+          <Md>{rev.summary}</Md>
+        </div>
+      )}
       {rev.explainer && (
-        <details>
+        <details className="refblock">
           <summary>What this PR does</summary>
           <Md className="dbody">{rev.explainer}</Md>
         </details>
       )}
       {rev.analysis && (
-        <details>
-          <summary>Analysis — what I checked, and what I dropped</summary>
+        <details className="refblock">
+          <summary>Reviewer's notes — what was checked, and what was dropped</summary>
           <Md className="dbody">{rev.analysis}</Md>
         </details>
       )}
