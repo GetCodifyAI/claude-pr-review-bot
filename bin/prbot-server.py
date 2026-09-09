@@ -566,6 +566,54 @@ def restore_global_skill():
     GLOBAL_SKILL_PATH.unlink(missing_ok=True)
 
 
+# --- Phase 5: skill audit trail (GitOps-on-save) ---------------------------------------------
+# Dashboard edits to the review skills also commit to a local git repo in $ROOT/skills, so the
+# team's review standard has a real who/when/why history. Local history only (no remote push
+# needed); the human editor is the commit AUTHOR, Robin is the committer. Best-effort — a save
+# must never fail because git did.
+def _skills_git(*args):
+    return subprocess.run(["git", "-C", str(SKILLS_DIR), *args],
+                          capture_output=True, text=True)
+
+
+def ensure_skills_repo():
+    SKILLS_DIR.mkdir(parents=True, exist_ok=True)
+    if not (SKILLS_DIR / ".git").is_dir():
+        _skills_git("init", "-q")
+        _skills_git("config", "user.email", "robin@robin.local")
+        _skills_git("config", "user.name", "Robin")
+
+
+def commit_skill_change(editor, summary):
+    """Commit whatever skill files just changed, attributing the edit to `editor`. No-op when
+    nothing changed. Never raises."""
+    try:
+        ensure_skills_repo()
+        _skills_git("add", "-A")
+        if not _skills_git("status", "--porcelain").stdout.strip():
+            return
+        _skills_git("commit", "-q", "-m", summary,
+                    "--author", f"{editor} <{editor}@robin.local>")
+    except Exception:
+        pass
+
+
+def skill_history(n=5):
+    """Recent revisions of the team default skill (_global.md): who/when/why, from git."""
+    try:
+        ensure_skills_repo()
+        r = _skills_git("log", f"-n{n}", "--format=%h%x00%an%x00%ct%x00%s", "--", "_global.md")
+        out = []
+        for line in r.stdout.splitlines():
+            parts = line.split("\x00")
+            if len(parts) == 4 and parts[2].isdigit():
+                out.append({"hash": parts[0], "author": parts[1],
+                            "at": int(parts[2]), "msg": parts[3]})
+        return out
+    except Exception:
+        return []
+
+
 def save_user_skill(login, text):
     save_skill(login, text)
 
@@ -2058,6 +2106,7 @@ class Handler(BaseHTTPRequestHandler):
                             "content": effort_depth(lv), "edited": effort_edited(lv)}
                        for lv in EFFORT_ORDER},
             "stats": prbot_learn.skill_stats(),
+            "teamHistory": skill_history(5),
         }
 
     def api_integrations(self, user):
@@ -2419,6 +2468,7 @@ class Handler(BaseHTTPRequestHandler):
             name = EFFORT[level][0]
             if step == "reset":
                 effort_depth_path(level).unlink(missing_ok=True)
+                commit_skill_change(user, f"Reset {name} review depth to the built-in default")
                 return ok(f"Reset the <b>{name}</b> depth to the built-in default.")
             text = one("skill")
             if not text.strip():
@@ -2428,6 +2478,7 @@ class Handler(BaseHTTPRequestHandler):
                 return err_b("That's very large (>20k chars). Trim it.")
             SKILLS_DIR.mkdir(parents=True, exist_ok=True)
             effort_depth_path(level).write_text(text)
+            commit_skill_change(user, f"Edited the {name} review depth")
             print(f"effort depth saved: {level} ({len(text)} chars)", flush=True)
             return ok(f"Saved the <b>{name}</b> review depth — it applies to every {name} review.")
 
@@ -2445,6 +2496,7 @@ class Handler(BaseHTTPRequestHandler):
             if len(new_text) > 40000:
                 return err_b("That skill is already very large (>40k chars). Trim it first.")
             save_skill(target, new_text)
+            commit_skill_change(user, f"Added a rule to {who}: {tidy_rule(rule)}")
             print(f"skill rule added to {target}: {tidy_rule(rule)!r}", flush=True)
             return ok(f"Added to {who} — Robin will apply it on every review: "
                       f"<b>{html.escape(tidy_rule(rule))}</b>")
@@ -2458,6 +2510,7 @@ class Handler(BaseHTTPRequestHandler):
                 return err_b("Type RESTORE to confirm — this discards the team's edits for "
                              "everyone.")
             restore_global_skill()
+            commit_skill_change(user, "Restored the team default to the built-in review skill")
             print("team default skill restored to installed default", flush=True)
             return ok("Team default restored to the built-in review skill.")
 
@@ -2466,6 +2519,7 @@ class Handler(BaseHTTPRequestHandler):
                 return err_b("The team default can't be reset here — use “Restore built-in” "
                              "with confirmation.")
             save_skill(user, "")
+            commit_skill_change(user, "Cleared a personal skill")
             return ok("Cleared your skill — your reviews use the team default now.")
 
         text = one("skill")
@@ -2475,6 +2529,7 @@ class Handler(BaseHTTPRequestHandler):
         if len(text) > 40000:
             return err_b("That skill is very large (>40k chars). Trim it and try again.")
         save_skill(target, text)
+        commit_skill_change(user, f"Edited {who}")
         print(f"skill saved: {target} ({len(text)} chars)", flush=True)
         return ok(f"Saved {who} — reviews now use it (with Robin's output format appended).")
 

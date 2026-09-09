@@ -289,6 +289,21 @@ export function Skills() {
             their own.
           </p>
           <SkillEditor token={d.token} target="global" value={d.teamSkill} onDone={onDone} />
+          {d.teamHistory && d.teamHistory.length > 0 && (
+            <div className="skillhist">
+              <div className="skillhist-h">Revision history — how the team standard evolved</div>
+              <ul>
+                {d.teamHistory.map((h) => (
+                  <li key={h.hash}>
+                    <span className="skillhist-msg">{h.msg}</span>
+                    <span className="skillhist-meta">
+                      {h.author} · {new Date(h.at * 1000).toLocaleDateString("en-US")}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       </details>
       <details className="skilled">

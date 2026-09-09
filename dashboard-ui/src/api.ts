@@ -243,6 +243,7 @@ export interface SkillsData {
   mySkill: string;
   depths: Record<string, DepthInfo>;
   stats: SkillStat[];
+  teamHistory: { hash: string; author: string; at: number; msg: string }[];
 }
 
 

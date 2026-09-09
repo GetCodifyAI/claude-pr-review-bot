@@ -669,3 +669,13 @@ font-weight:700;margin:20px 0 9px}
 .rolltable th{font-size:.74rem;text-transform:uppercase;letter-spacing:.04em;color:var(--faint)}
 .rolltable td{font-variant-numeric:tabular-nums}
 .rolltable tr:last-child td{border-bottom:0}
+
+/* Phase 5 — team skill revision history */
+.skillhist{margin-top:14px;border-top:1px solid var(--line2);padding-top:11px}
+.skillhist-h{font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);
+font-weight:700;margin-bottom:8px}
+.skillhist ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px}
+.skillhist li{display:flex;justify-content:space-between;gap:12px;font-size:.83rem;
+border-left:2px solid var(--line);padding-left:10px}
+.skillhist-msg{color:var(--fg)}
+.skillhist-meta{color:var(--faint);white-space:nowrap;font-size:.78rem}
