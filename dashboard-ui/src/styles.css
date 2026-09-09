@@ -213,18 +213,20 @@ cursor:pointer;user-select:none;white-space:nowrap}
 .rqtoggle input{width:15px;height:15px;accent-color:#e5495f;cursor:pointer}
 .rqtoggle:hover{color:var(--fg)}
 /* banners */
-.banner{border-radius:12px;padding:14px 16px;margin:14px 0;font-size:.9rem;display:flex;gap:11px;
-align-items:flex-start;border:1px solid;position:relative;overflow:hidden}
-.banner::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px}
-.banner.warn{background:var(--warnbg);border-color:var(--warnln);color:#f6cd8a}
-.banner.warn::before{background:var(--warn)}
-.banner.ok{background:var(--okbg);border-color:var(--okln);color:#8fecc2}
-.banner.ok::before{background:var(--ok)}
-.banner.err{background:var(--errbg);border-color:var(--errln);color:#ffa0b2}
-.banner.err::before{background:var(--err)}
-.banner.info{background:rgba(91,124,250,.10);border-color:rgba(91,124,250,.32);color:#bcd0ff}
-.banner.info::before{background:#5b7cfa}
-.banner b{color:#fff}
+.banner{border-radius:11px;padding:12px 15px;margin:12px 0;font-size:.88rem;display:flex;gap:11px;
+align-items:flex-start;border:1px solid var(--line2);background:var(--panel2);color:var(--dim);
+position:relative;overflow:hidden;line-height:1.55}
+.banner::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:transparent}
+.banner b{color:var(--fg);font-weight:600}
+/* risk / focus context = neutral, no accent colour (it's just a hint) */
+.banner.info{background:var(--panel2);border-color:var(--line2)}
+/* real warnings keep a subtle tint + a thin accent bar, but NEUTRAL body text */
+.banner.warn{background:rgba(217,164,65,.05);border-color:rgba(217,164,65,.20)}
+.banner.warn::before{background:#d9a441}
+.banner.ok{background:rgba(52,168,110,.05);border-color:rgba(52,168,110,.20)}
+.banner.ok::before{background:#34a86e}
+.banner.err{background:rgba(229,101,138,.05);border-color:rgba(229,101,138,.20)}
+.banner.err::before{background:#e5658a}
 /* review effort picker */
 .effort-lbl{font-size:.78rem;font-weight:650;letter-spacing:.02em;text-transform:uppercase;
 color:var(--faint);margin-bottom:8px}
@@ -745,7 +747,7 @@ color:var(--dim)}
 /* Assessment key points + clamped summary */
 .keypoints{margin:0 0 14px;padding-left:22px;max-width:78ch}
 .keypoints li{margin:7px 0;line-height:1.55;font-size:.92rem}
-.keypoints li::marker{color:var(--accent,#7c83f0)}
+.keypoints li::marker{color:var(--faint)}
 .clamp{display:-webkit-box;-webkit-line-clamp:4;line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
 .morebtn{margin-top:8px;background:none;border:0;color:var(--blue);font:inherit;font-size:.82rem;
 cursor:pointer;padding:0;text-decoration:underline}
