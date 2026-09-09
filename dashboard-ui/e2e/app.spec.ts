@@ -47,6 +47,13 @@ test.describe("signed in", () => {
     await expect(page.getByText(/guard against a null vendor/i).first()).toBeVisible();
   });
 
+  test("trust dashboard renders from the rollup api", async ({ page }) => {
+    await page.goto("/dashboard");
+    await expect(page.getByRole("heading", { name: /trust dashboard/i })).toBeVisible();
+    await expect(page.getByText(/reviews run/i)).toBeVisible();
+    await expect(page.getByText(/agreement across reviewers/i)).toBeVisible();
+  });
+
   test("skills page renders", async ({ page }) => {
     await page.goto("/skills");
     await expect(page.getByRole("heading", { name: /review skills/i })).toBeVisible();

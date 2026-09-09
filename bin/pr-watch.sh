@@ -159,5 +159,8 @@ jq -c '.[]' "$ROOT/queue.json" | while read -r pr; do
         {type:"button", text:{type:"plain_text", text:"Open PR"}, url:$u}]}]}' \
     | slack_post "$num" root "$login"
     echo "$num:$login" >> "$SEEN"
+    # Phase 4 cycle-time source: stamp when this reviewer was first asked (once).
+    ud="$STATE/$num/users/$login"; mkdir -p "$ud"
+    [ -f "$ud/requested_at" ] || date +%s > "$ud/requested_at"
   done
 done

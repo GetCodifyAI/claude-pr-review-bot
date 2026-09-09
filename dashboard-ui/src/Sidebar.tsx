@@ -14,6 +14,7 @@ const GROUPS: { label: string; items: [string, string, string][] }[] = [
       ["queue", "Queue", "/"],
       ["qa", "QA guides", "/qa"],
       ["learnings", "Learnings", "/learnings"],
+      ["dashboard", "Trust dashboard", "/dashboard"],
     ],
   },
   {

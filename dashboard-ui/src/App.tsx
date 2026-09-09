@@ -8,6 +8,7 @@ import { HowItWorks } from "./HowItWorks";
 import { Integrations } from "./Integrations";
 import { Learnings } from "./Learnings";
 import { Queue } from "./Queue";
+import { Rollup } from "./Rollup";
 import { Sidebar } from "./Sidebar";
 import { Skills } from "./Skills";
 import { StackPage } from "./StackPage";
@@ -35,6 +36,7 @@ function Routed({ me }: { me: Me }) {
   if (path.startsWith("/integrations") || path.startsWith("/settings"))
     return <Integrations me={me} />;
   if (path.startsWith("/learnings")) return <Learnings me={me} />;
+  if (path.startsWith("/dashboard")) return <Rollup />;
   if (path.startsWith("/how")) return <HowItWorks />;
   return <NotFound />;
 }

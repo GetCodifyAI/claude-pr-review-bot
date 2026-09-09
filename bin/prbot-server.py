@@ -50,6 +50,7 @@ import prbot_diff
 import prbot_howimg
 import prbot_learn
 import prbot_md
+import prbot_rollup
 
 BRAND = "Robin"                    # product name shown beside the logo (see prbot_assets)
 CLAUDE_ICON = ("<svg viewBox='0 0 24 24' width=18 height=18 fill=currentColor aria-hidden=true>"
@@ -1854,6 +1855,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.api_json(self.api_integrations(user))
         if route == "/api/learnings":
             return self.api_json(self.api_learnings(user))
+        if route == "/api/rollup":
+            return self.api_json(prbot_rollup.compute(STATE, ROOT))
         if route == "/api/how":
             return self.api_json({"images": prbot_howimg.IMG, "brand": BRAND,
                                   "reviewer": REVIEWER, "tabs": [{"key": k, "label": lbl,

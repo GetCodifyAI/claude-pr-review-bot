@@ -291,7 +291,22 @@ export interface HowData {
   tabs: { key: string; label: string; desc: string }[];
 }
 
+export interface RollupData {
+  generatedAt: number;
+  reviews: { total: number; week: number };
+  prs: number;
+  reviewers: { login: string; runs: number; week: number; tokens: number }[];
+  tokens: { total: number; week: number };
+  keep: {
+    allTime: { kept: number; edited: number; dropped: number; rate: number | null };
+    week: { kept: number; edited: number; dropped: number; rate: number | null };
+  };
+  agreement: { multiReviewerPRs: number; confirmedFindings: number; avgRate: number | null };
+  cycle: { medianReviewToPostSec: number | null; n: number };
+}
+
 export const api = {
+  rollup: () => get<RollupData>("/rollup"),
   me: () => get<Me>("/me"),
   queue: (tab: string, sort: string) =>
     get<QueueData>(`/queue?tab=${encodeURIComponent(tab)}&sort=${encodeURIComponent(sort)}`),
