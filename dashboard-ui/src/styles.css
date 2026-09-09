@@ -431,9 +431,9 @@ box-shadow:0 24px 70px -20px rgba(0,0,0,.7),inset 0 0 0 1px rgba(255,255,255,.03
 overflow:hidden;animation:cmdkin .13s ease-out}
 @keyframes cmdkin{from{opacity:0;transform:translateY(-8px) scale(.985)}to{opacity:1;transform:none}}
 @media(prefers-reduced-motion:reduce){.cmdk{animation:none}}
-.cmdk-inwrap{display:flex;align-items:center;gap:11px;padding:0 18px;border-bottom:1px solid var(--line)}
+.cmdk-inwrap{display:flex;align-items:center;gap:13px;padding:4px 22px;border-bottom:1px solid var(--line)}
 .cmdk-search{color:var(--faint);font-size:1.25rem;line-height:1}
-.cmdk-in{flex:1;padding:17px 0;border:0;background:transparent;color:var(--fg);
+.cmdk-in{flex:1;padding:18px 6px;border:0;background:transparent;color:var(--fg);
 font-family:var(--font);font-size:1.02rem;outline:none}
 .cmdk-in::placeholder{color:var(--faint)}
 .cmdk-list{max-height:min(56vh,460px);overflow-y:auto;padding:8px}
