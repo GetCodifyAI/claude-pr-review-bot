@@ -222,10 +222,11 @@ sudo tee /etc/apache2/sites-available/prbot.conf >/dev/null <<EOF
     ServerName $PRBOT_HOST
     ServerAlias $PRBOT_HOST_OLD
     ProxyPreserveHost On
-    ProxyPass        /prbot http://127.0.0.1:$PORT/prbot
-    ProxyPassReverse /prbot http://127.0.0.1:$PORT/prbot
-    # Nothing else is served on this hostname; the app answers on app-<env> as before.
-    RedirectMatch 404 ^(?!/prbot)
+    # Serve the app at the site root. It still also answers under the legacy /prbot prefix
+    # (the server strips it), so bookmarks and signed Slack links sent before this change
+    # keep resolving. Nothing else lives on this hostname; the app answers on app-<env>.
+    ProxyPass        / http://127.0.0.1:$PORT/
+    ProxyPassReverse / http://127.0.0.1:$PORT/
     ErrorLog \${APACHE_LOG_DIR}/prbot-error.log
     CustomLog \${APACHE_LOG_DIR}/prbot-access.log combined
 </VirtualHost>
@@ -241,7 +242,8 @@ fi
 # abort. A graceful reload is enough to pick up new LoadModule lines in practice; the restart
 # stays only as a genuine fallback.
 prbot_reachable() {
-  [ "$(curl -s -m 5 -H "Host: $PRBOT_HOST" http://127.0.0.1/prbot/health 2>/dev/null)" = "ok" ]
+  [ "$(curl -s -m 5 -H "Host: $PRBOT_HOST" http://127.0.0.1/health 2>/dev/null)" = "ok" ] \
+    && [ "$(curl -s -m 5 -H "Host: $PRBOT_HOST" http://127.0.0.1/prbot/health 2>/dev/null)" = "ok" ]
 }
 sudo systemctl reload apache2
 sleep 1
@@ -251,10 +253,10 @@ if ! prbot_reachable; then
   sleep 2
 fi
 if prbot_reachable; then
-  echo "   apache ok (/prbot answers on $PRBOT_HOST)"
+  echo "   apache ok (root + legacy /prbot answer on $PRBOT_HOST)"
 else
   sudo a2dissite prbot >/dev/null && sudo systemctl reload apache2
-  echo "   !! /prbot unreachable — vhost disabled, app untouched"; exit 1
+  echo "   !! endpoint unreachable — vhost disabled, app untouched"; exit 1
 fi
 
 echo "==> cron"
@@ -272,11 +274,11 @@ crontab "$tmp"; rm -f "$tmp"
 
 echo
 echo "Done. Checks:"
-echo "  curl -s localhost:$PORT/prbot/health          # -> ok"
-echo "  curl -s https://$PRBOT_HOST/prbot/health       # -> ok (through the ALB)"
+echo "  curl -s localhost:$PORT/health                # -> ok (also /prbot/health)"
+echo "  curl -s https://$PRBOT_HOST/health             # -> ok (through the ALB)"
 echo "  $BIN/pr-watch.sh                              # -> Slack card per open request"
 echo
-echo "Sign in (you and every teammate):  https://$PRBOT_HOST/prbot/login"
+echo "Sign in (you and every teammate):  https://$PRBOT_HOST/login  (old /prbot links still work)"
 echo "  Each person pastes their own GitHub PAT (repo scope) + Slack member ID once."
 echo "  Each reviewer runs their own review; posting and approving happen as each signed-in user."
 echo

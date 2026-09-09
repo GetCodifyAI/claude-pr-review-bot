@@ -42,7 +42,7 @@ export function Login({ me, onDone }: { me: Me; onDone: () => void }) {
           nothing is ever posted for you.
         </p>
         {me.oauth && (
-          <a className="btn soft block" href="/prbot/oauth/start">
+          <a className="btn soft block" href="/oauth/start">
             Sign in with GitHub
           </a>
         )}

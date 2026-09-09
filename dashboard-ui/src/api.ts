@@ -1,8 +1,8 @@
-// Typed client for Robin's JSON API (/prbot/api/*). Same-origin, so the session cookie rides
+// Typed client for Robin's JSON API (/api/*). Same-origin, so the session cookie rides
 // along automatically. Read endpoints hand back the signed exp/sig tokens for the actions
 // available on a resource; POST endpoints pass those back (mirrors the old HTML forms).
 
-const BASE = "/prbot/api";
+const BASE = "/api";
 
 export class Unauthorized extends Error {}
 

@@ -1,5 +1,5 @@
 // Dev helper: screenshot an authed SPA page. Usage:
-//   URL=http://127.0.0.1:PORT/prbot/pr?pr=38849 COOKIE='wimukthi-sl:exp:sig' OUT=x.png node e2e/shot.mjs
+//   URL=http://127.0.0.1:PORT/pr?pr=38849 COOKIE='wimukthi-sl:exp:sig' OUT=x.png node e2e/shot.mjs
 import { chromium } from "@playwright/test";
 
 const url = process.env.URL;
@@ -14,7 +14,7 @@ const ctx = await browser.newContext({
 });
 if (cookieVal) {
   await ctx.addCookies([
-    { name: "prbot_s", value: cookieVal, domain: u.hostname, path: "/prbot", httpOnly: true },
+    { name: "prbot_s", value: cookieVal, domain: u.hostname, path: "/", httpOnly: true },
   ]);
 }
 const page = await ctx.newPage();

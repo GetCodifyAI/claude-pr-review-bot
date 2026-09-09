@@ -22,11 +22,11 @@ afterEach(() => {
   calls = [];
 });
 
-test("get hits the /prbot/api base and returns parsed JSON", async () => {
+test("get hits the /api base and returns parsed JSON", async () => {
   stubFetch(200, { authed: true, login: "me" });
   const r = await get<{ authed: boolean; login: string }>("/me");
   assert.equal(r.login, "me");
-  assert.equal(calls[0].url, "/prbot/api/me");
+  assert.equal(calls[0].url, "/api/me");
   assert.equal(calls[0].init?.credentials, "same-origin");
 });
 
@@ -52,19 +52,19 @@ test("a non-ok response throws with the server error message", async () => {
 test("api.queue encodes tab and sort into the query string", async () => {
   stubFetch(200, { rows: [] });
   await api.queue("to do", "oldest first");
-  assert.equal(calls[0].url, "/prbot/api/queue?tab=to%20do&sort=oldest%20first");
+  assert.equal(calls[0].url, "/api/queue?tab=to%20do&sort=oldest%20first");
 });
 
 test("api.pr appends the version param only when given", async () => {
   stubFetch(200, {});
   await api.pr("42");
-  assert.equal(calls[0].url, "/prbot/api/pr?pr=42");
+  assert.equal(calls[0].url, "/api/pr?pr=42");
   await api.pr("42", "3");
-  assert.equal(calls[1].url, "/prbot/api/pr?pr=42&v=3");
+  assert.equal(calls[1].url, "/api/pr?pr=42&v=3");
 });
 
 test("api.skillAction posts to the step-scoped route", async () => {
   stubFetch(200, { bannerHtml: "<div/>" });
   await api.skillAction("save", { target: "global", skill: "x" });
-  assert.equal(calls[0].url, "/prbot/api/skill/save");
+  assert.equal(calls[0].url, "/api/skill/save");
 });

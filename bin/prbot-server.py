@@ -1058,12 +1058,12 @@ def _cookie_domain(host):
 
 def session_cookie(login, host=""):
     exp = int(time.time()) + SESSION_TTL
-    return (f"prbot_s={login}:{exp}:{session_sig(login, exp)}; {_cookie_domain(host)}Path=/prbot; "
+    return (f"prbot_s={login}:{exp}:{session_sig(login, exp)}; {_cookie_domain(host)}Path=/; "
             f"Max-Age={SESSION_TTL}; HttpOnly; Secure; SameSite=Lax")
 
 
 def clear_session_cookie(host=""):
-    return (f"prbot_s=; {_cookie_domain(host)}Path=/prbot; Max-Age=0; HttpOnly; Secure; "
+    return (f"prbot_s=; {_cookie_domain(host)}Path=/; Max-Age=0; HttpOnly; Secure; "
             "SameSite=Lax")
 
 
@@ -1126,12 +1126,12 @@ def link(action, pr, ttl=PAGE_TTL):
     # Pages are gated by the session cookie, so they get plain, bookmarkable URLs. Only the
     # actions that change something carry a signed, expiring token.
     if not action:
-        return "/prbot/"
+        return "/"
     if action == "pr":
-        return f"/prbot/pr?pr={pr}"
+        return f"/pr?pr={pr}"
     exp, sig = mint(action, pr, ttl)
     q = f"?pr={pr}&exp={exp}&sig={sig}" if pr else f"?exp={exp}&sig={sig}"
-    return f"/prbot/{action}{q}"
+    return f"/{action}{q}"
 
 
 def verify(action, pr, exp, sig):
@@ -1266,9 +1266,9 @@ def index_html():
         "<link rel=preconnect href='https://fonts.gstatic.com' crossorigin>"
         "<link rel=stylesheet href='https://fonts.googleapis.com/css2?"
         "family=Inter:wght@400;500;600;700&display=swap'>"
-        "<link rel=stylesheet href='/prbot/static/app.css'>"
+        "<link rel=stylesheet href='/static/app.css'>"
         "</head><body><div id=root></div>"
-        "<script src='/prbot/static/app.js'></script></body></html>")
+        "<script src='/static/app.js'></script></body></html>")
 
 
 # --- state --------------------------------------------------------------------------------
@@ -1640,9 +1640,9 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def to_login(self):
-        # Only ever bounce back inside /prbot — an open redirect otherwise.
-        nxt = self.path if self.path.startswith("/prbot/") else "/prbot/"
-        return self.redirect(f"/prbot/login?next={quote(nxt, safe='')}")
+        # Only ever bounce back to a local path — an open redirect otherwise.
+        nxt = self.path if self.path.startswith("/") and not self.path.startswith("//") else "/"
+        return self.redirect(f"/login?next={quote(nxt, safe='')}")
 
     # -- GET ---------------------------------------------------------------------------------
     def do_GET(self):
@@ -1657,15 +1657,15 @@ class Handler(BaseHTTPRequestHandler):
         if route.startswith("/api/"):
             return self.api_get(route, q)
         if route == "/logout":
-            return self.redirect("/prbot/login",
+            return self.redirect("/login",
                                  cookie=clear_session_cookie(self.headers.get("Host", "")))
         if route == "/oauth/start":
             if not OAUTH_ENABLED:
-                return self.redirect("/prbot/login?err=" + quote(
+                return self.redirect("/login?err=" + quote(
                     "GitHub login isn't configured on this box \u2014 sign in with a token."))
-            nxt = (q.get("next") or ["/prbot/"])[0]
-            return self.redirect(oauth_authorize_url(nxt if nxt.startswith("/prbot/")
-                                                     else "/prbot/"))
+            nxt = (q.get("next") or ["/"])[0]
+            return self.redirect(oauth_authorize_url(
+                nxt if nxt.startswith("/") and not nxt.startswith("//") else "/"))
         if route == "/oauth/callback":
             return self.oauth_callback((q.get("code") or [""])[0],
                                        (q.get("state") or [""])[0],
@@ -1702,7 +1702,9 @@ class Handler(BaseHTTPRequestHandler):
         if sib and not q.get("sso") and route != "/login" and not session_user(self.headers):
             accept = f"https://{host}/prbot/handoff/accept"
             return self.redirect(f"https://{sib}/prbot/handoff?next=" + quote(accept, safe=""))
-        return self.reply(200, index_html())
+        user = session_user(self.headers)
+        ck = session_cookie(user, host) if user else None
+        return self.reply(200, index_html(), cookie=ck)
 
     # -- POST --------------------------------------------------------------------------------
     # --- JSON API + static (React frontend) -------------------------------------------------

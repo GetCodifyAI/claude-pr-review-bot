@@ -139,7 +139,7 @@ export function mintAuthState() {
           name: "prbot_s",
           value: `${USER}:${exp}:${sig}`,
           domain: "127.0.0.1",
-          path: "/prbot",
+          path: "/",
           expires: exp,
           httpOnly: true,
           secure: false,

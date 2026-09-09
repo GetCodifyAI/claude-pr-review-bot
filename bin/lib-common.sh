@@ -61,7 +61,7 @@ require_env() {
 }
 
 # --- signed links ----------------------------------------------------------------------------
-# The /prbot endpoint is served over the PUBLIC internet (the staging ALB answers
+# Robin is served over the PUBLIC internet (the staging ALB answers
 # *.staging.eng.cutanddry.com with no auth in front), so every link carries an
 # HMAC over action+pr+expiry. Unsigned or expired links are rejected server-side.
 sign() { printf '%s' "$1" | openssl dgst -sha256 -hmac "$PRBOT_SECRET" -r | cut -d' ' -f1; }
@@ -71,7 +71,7 @@ signed_link() {
   local action="$1" pr="$2" ttl="$3" exp sig
   exp=$(( $(date +%s) + ttl ))
   sig=$(sign "$action:$pr:$exp")
-  echo "$PUBLIC_URL/prbot/$action?pr=$pr&exp=$exp&sig=$sig"
+  echo "$PUBLIC_URL/$action?pr=$pr&exp=$exp&sig=$sig"
 }
 
 # dashboard_link [ttl-seconds] — the index page; signed with empty action and pr.
@@ -79,7 +79,7 @@ dashboard_link() {
   local ttl="${1:-604800}" exp sig
   exp=$(( $(date +%s) + ttl ))
   sig=$(sign "::$exp")
-  echo "$PUBLIC_URL/prbot/?exp=$exp&sig=$sig"
+  echo "$PUBLIC_URL/?exp=$exp&sig=$sig"
 }
 
 # --- slack -----------------------------------------------------------------------------------
