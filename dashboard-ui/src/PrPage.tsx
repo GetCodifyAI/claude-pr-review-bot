@@ -289,6 +289,8 @@ function FindingCard({
   const [exp, setExp] = useState("");
   const [expLoading, setExpLoading] = useState(false);
   const [expErr, setExpErr] = useState("");
+  // Unstructured findings (older reviews) show the comment inline; structured ones tuck it away.
+  const [showDetail, setShowDetail] = useState(!f.structured);
   const explain = async () => {
     if (expLoading) return;
     setExpErr("");
@@ -302,57 +304,61 @@ function FindingCard({
       setExpLoading(false);
     }
   };
+  const loc = `${f.path}:${f.line}`;
   return (
-    <div className="finding">
+    <div className={"finding" + (checked ? " sel" : "")}>
       <div className="fhead">
         <input type="checkbox" className="fsel" checked={checked} onChange={onToggle} />
-        <label>
-          <span className={"pill " + f.severity}>{f.sevLabel}</span>
-        </label>
+        <span className={"pill " + f.severity}>{f.sevLabel}</span>
         {f.agreement?.confirmed ? (
-          <span className="agree ok" title={`Also raised by ${f.agreement.by.join(", ")}`}>
-            ✓ Confirmed by {f.agreement.n} independent reviews ({f.agreement.differ})
+          <span className="agree ok" title={`Also raised by ${f.agreement.by.join(", ")} (${f.agreement.differ})`}>
+            ✓ {f.agreement.n} independent
           </span>
-        ) : (
-          f.agreement && (
-            <span className="agree solo">Only flagged by your run</span>
-          )
-        )}
-        <span className="loc">
-          {f.path}:{f.line}
-        </span>
-        <span className="thread">{f.thread ? `↩ reply to ${f.thread}` : "new thread"}</span>
+        ) : f.agreement ? (
+          <span className="agree solo">only your run</span>
+        ) : null}
+        <span className="fhead-sp" />
+        <span className="loc" title={loc}>{loc}</span>
       </div>
-      {f.structured && (
-        <>
-          <div className="ftitle">{f.title}</div>
-          {f.impact && (
-            <div className="fimpact">
-              <span className="fimpact-l">Why it matters</span> {f.impact}
-            </div>
+      <div className="fmain">
+        {f.structured && (
+          <>
+            <div className="ftitle">{f.title}</div>
+            {f.impact && (
+              <div className="fimpact">
+                <span className="fimpact-l">Why it matters</span>
+                {f.impact}
+              </div>
+            )}
+          </>
+        )}
+        {f.thread && <div className="freply">↩ reply to {f.thread}</div>}
+        <div className="factions">
+          {!exp && (
+            <button type="button" className="fbtn accent" onClick={explain} disabled={expLoading}>
+              {expLoading ? "Explaining…" : "✨ Explain simply"}
+            </button>
           )}
-        </>
-      )}
-      {!exp && (
-        <button type="button" className="explainbtn" onClick={explain} disabled={expLoading}>
-          {expLoading ? "Explaining…" : "🟢 Explain simply & how to verify"}
-        </button>
-      )}
-      {expErr && <div className="fimpact" style={{ color: "var(--red, #e5658a)" }}>{expErr}</div>}
-      {exp && (
-        <div className="explainbox">
-          <div className="explainbox-h">Plain-language explanation</div>
-          <Md className="dbody">{exp}</Md>
+          {f.structured && (
+            <button type="button" className="fbtn" onClick={() => setShowDetail((v) => !v)}>
+              {showDetail ? "Hide comment" : "View / edit comment"}
+            </button>
+          )}
         </div>
-      )}
-      {f.structured ? (
-        <details className="fdetail">
-          <summary>Details &amp; edit — this is the comment posted to GitHub</summary>
-          <FindingBody body={body} onBody={onBody} suggestion={f.suggestion} />
-        </details>
-      ) : (
-        <FindingBody body={body} onBody={onBody} suggestion={f.suggestion} />
-      )}
+        {expErr && <div className="ferr">{expErr}</div>}
+        {exp && (
+          <div className="explainbox">
+            <div className="explainbox-h">In plain words · how to verify</div>
+            <Md className="dbody">{exp}</Md>
+          </div>
+        )}
+        {showDetail && (
+          <>
+            {f.structured && <div className="fbody-note">This is the comment posted to GitHub — edit if needed.</div>}
+            <FindingBody body={body} onBody={onBody} suggestion={f.suggestion} />
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -369,6 +375,23 @@ function FindingBody({ body, onBody, suggestion }:
             <code>{suggestion}</code>
           </pre>
         </div>
+      )}
+    </div>
+  );
+}
+
+function ClampSummary({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const long = text.length > 260;
+  return (
+    <div className="assess-summary">
+      <div className={!open && long ? "clamp" : ""}>
+        <Md>{text}</Md>
+      </div>
+      {long && (
+        <button type="button" className="morebtn" onClick={() => setOpen((v) => !v)}>
+          {open ? "Show less" : "Show more"}
+        </button>
       )}
     </div>
   );
@@ -486,10 +509,22 @@ function ReviewBody({ data, onDone }: { data: PrData; onDone: () => void }) {
           </div>
         );
       })()}
-      {rev.summary && (
-        <div className="assess-summary">
-          <Md>{rev.summary}</Md>
-        </div>
+      {rev.keyPoints && rev.keyPoints.length > 0 ? (
+        <ul className="keypoints">
+          {rev.keyPoints.map((pt, i) => (
+            <li key={i}>{pt}</li>
+          ))}
+        </ul>
+      ) : rev.summary ? (
+        <ClampSummary text={rev.summary} />
+      ) : null}
+      {rev.keyPoints && rev.keyPoints.length > 0 && rev.summary && (
+        <details className="refblock">
+          <summary>Full summary</summary>
+          <div className="dbody">
+            <Md>{rev.summary}</Md>
+          </div>
+        </details>
       )}
       {rev.explainer && (
         <details className="refblock">

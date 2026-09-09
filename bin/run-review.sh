@@ -137,8 +137,14 @@ $STACK"
 # The output contract — spelled out here so ANY skill (custom or global) yields the exact
 # review.json the dashboard needs, independent of whether the skill itself defines the format.
 CONTRACT="Do NOT print a table and do NOT post anything to GitHub. Write your findings to
-./review.json as a single JSON object: {\"event\":\"COMMENT\", \"summary\":\"…\", \"explainer\":
-\"what this PR does\", \"analysis\":\"what you checked and what you dropped\", \"comments\":[{
+./review.json as a single JSON object: {\"event\":\"COMMENT\",
+\"summary\":\"the bottom line in 1-2 SHORT sentences — the verdict and why, NOT a wall of text\",
+\"keyPoints\":[\"3 to 5 very short scannable bullets: the most important things a reviewer should
+know about this PR, each ONE plain sentence in everyday language, no jargon or symbol names\"],
+\"explainer\":\"what this PR does, as 3 to 6 SHORT markdown bullet points (each a '- ' line, one
+plain sentence) — NOT a paragraph\",
+\"analysis\":\"what you verified and what you deliberately skipped, as terse markdown bullets — keep
+it tight, no long prose\", \"comments\":[{
 \"path\":\"file\", \"line\":123, \"severity\":\"blocker|should-fix|nit|question\", \"title\":
 \"a short plain-language headline a JUNIOR engineer would understand at a glance — no jargon, no
 symbol names, say what is wrong in everyday words\", \"impact\":\"ONE plain sentence: who is
@@ -154,9 +160,9 @@ findings are shown to the reviewer in a separate collapsed \"maybe\" tray, so us
 rather than dropping a borderline point. When a finding has a concrete,
 correct fix that replaces the SINGLE line you set in \"line\", put the exact replacement line
 (matching its indentation) in \"suggestion\" — the reviewer can post it as a one-click GitHub
-suggestion. Only when confident and single-line; otherwise leave \"suggestion\" null. A human
-reads summary/explainer/analysis in a dashboard, then selects, edits and posts individual
-comments — write that prose for a person and keep findings few and high-confidence.${LEARN}"
+suggestion. Only when confident and single-line; otherwise leave \"suggestion\" null. A human skims summary/keyPoints/explainer/analysis in a dashboard — write them SHORT and
+scannable (point form, plain language), not long prose — then selects, edits and posts individual
+comments. Keep findings few and high-confidence.${LEARN}"
 
 if [ "$CHOICE" != team ] && [ -n "$ACTOR" ] && [ -f "$USER_SKILL" ]; then
   echo "$ACTOR" > "$DIR/skill"; APPROACH="$(cat "$USER_SKILL")"

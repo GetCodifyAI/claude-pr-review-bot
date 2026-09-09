@@ -109,6 +109,7 @@ export interface ApprovedData {
 export interface ReviewData {
   event: string;
   summary: string;
+  keyPoints: string[];
   explainer: string;
   analysis: string;
   chips: SevChip[];

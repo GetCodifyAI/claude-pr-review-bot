@@ -98,6 +98,11 @@ export function buildFixture() {
     JSON.stringify({
       event: "COMMENT",
       summary: "Adds a lead-time badge to product cards. Logic is sound; two small things.",
+      keyPoints: [
+        "The badge logic is sound — no blockers.",
+        "Guard a null vendor before reading its lead time.",
+        "One nit: prefer const over let in the badge component.",
+      ],
       explainer: "A COMMENT review — nothing here blocks the merge.",
       analysis: "",
       comments: [

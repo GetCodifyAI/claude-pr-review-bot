@@ -46,6 +46,7 @@ test.describe("signed in", () => {
     await expect(page.locator("h1.prtitle")).toContainText(/lead-time badge/i);
     await expect(page.getByText(/can crash the lead-time badge/i).first()).toBeVisible();
     await expect(page.getByRole("button", { name: /explain simply/i }).first()).toBeVisible();
+    await expect(page.getByText(/the badge logic is sound/i)).toBeVisible();
   });
 
   test("insights dashboard renders from the rollup api", async ({ page }) => {

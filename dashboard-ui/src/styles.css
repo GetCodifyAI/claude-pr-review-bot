@@ -116,15 +116,17 @@ details[open]>summary::after{transform:rotate(180deg)}
 summary:hover{color:#fff}
 .dbody{padding:2px 20px 6px;border-top:1px solid var(--line2);margin-top:2px}
 /* findings */
-.finding{border:1px solid var(--line);border-radius:var(--r);margin:12px 0;background:var(--panel);
-overflow:hidden;box-shadow:var(--shadow);transition:opacity .2s,border-color .2s;
-animation:rise .5s cubic-bezier(.2,.7,.2,1) both}
+.finding{border:1px solid var(--line);border-radius:14px;margin:12px 0;background:var(--panel);
+overflow:hidden;transition:border-color .15s;animation:rise .5s cubic-bezier(.2,.7,.2,1) both}
 .finding.off{opacity:.45}
-.fhead{display:flex;gap:11px;align-items:center;flex-wrap:wrap;padding:14px 18px;
-background:linear-gradient(180deg,var(--panel2),var(--panel));border-bottom:1px solid var(--line2)}
-.loc{font-family:var(--mono);font-size:.82rem;color:#c3c9de;word-break:break-all}
-.thread{font-size:.75rem;color:var(--faint);margin-left:auto;white-space:nowrap}
-.fbody{padding:15px 18px}
+.finding.sel{border-color:rgba(124,131,240,.5)}
+.fhead{display:flex;gap:9px;align-items:center;padding:11px 16px;border-bottom:1px solid var(--line2)}
+.fhead .fsel{flex:none;margin:0}
+.fhead-sp{flex:1}
+.loc{font-family:var(--mono);font-size:.75rem;color:var(--dim);white-space:nowrap;overflow:hidden;
+text-overflow:ellipsis;max-width:52%}
+.fmain{padding:13px 16px 15px}
+.fbody{margin-top:12px}
 .ftabs{display:inline-flex;gap:2px;margin-bottom:9px;background:var(--panel2);border-radius:8px;
 padding:2px;border:1px solid var(--line)}
 .fmode{background:transparent;border:0;color:var(--dim);font-size:.78rem;font-weight:600;
@@ -696,27 +698,24 @@ margin-bottom:14px}
 .agreebig{font-size:2.3rem;font-weight:700;font-variant-numeric:tabular-nums;line-height:1;
 margin-bottom:8px}
 
-/* Finding readability — plain title + impact, technical detail collapsed */
-.ftitle{font-size:.95rem;font-weight:600;line-height:1.4;margin:8px 2px 0}
-.fimpact{font-size:.84rem;color:var(--dim);line-height:1.5;margin:5px 2px 0}
-.fimpact-l{font-weight:600;color:var(--fg);margin-right:4px}
-.fdetail{margin-top:9px}
-.fdetail>summary{cursor:pointer;font-size:.8rem;color:var(--blue);list-style:none;
-padding:3px 0;user-select:none}
-.fdetail>summary::-webkit-details-marker{display:none}
-.fdetail>summary::before{content:"▸ ";color:var(--faint)}
-.fdetail[open]>summary::before{content:"▾ "}
-
-/* On-demand plain-language explanation of a finding */
-.explainbtn{margin-top:9px;font-size:.8rem;color:var(--blue);background:none;
-border:1px dashed var(--line);border-radius:8px;padding:6px 11px;cursor:pointer;font:inherit;
-font-size:.8rem}
-.explainbtn:hover{background:var(--panel2)}
-.explainbtn:disabled{cursor:default;opacity:.6}
-.explainbox{margin-top:10px;border:1px solid rgba(76,155,232,.3);background:rgba(76,155,232,.06);
-border-radius:10px;padding:11px 13px}
-.explainbox-h{font-size:.74rem;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);
-font-weight:700;margin-bottom:6px}
+/* Finding readability — plain title + impact + clean action buttons */
+.ftitle{font-size:.96rem;font-weight:650;line-height:1.45;color:var(--fg)}
+.fimpact{font-size:.85rem;color:var(--dim);line-height:1.55;margin-top:6px}
+.fimpact-l{font-weight:600;color:var(--fg);margin-right:6px}
+.freply{font-size:.76rem;color:var(--faint);margin-top:8px}
+.factions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.fbtn{font:inherit;font-size:.8rem;color:var(--fg);background:var(--panel2);border:1px solid var(--line);
+border-radius:8px;padding:6px 12px;cursor:pointer;transition:background .13s,border-color .13s}
+.fbtn:hover{background:var(--line2)}
+.fbtn.accent{color:var(--blue);border-color:rgba(76,155,232,.4)}
+.fbtn.accent:hover{background:rgba(76,155,232,.1)}
+.fbtn:disabled{opacity:.6;cursor:default}
+.ferr{font-size:.82rem;color:#e5658a;margin-top:9px}
+.fbody-note{font-size:.76rem;color:var(--faint);margin-top:12px;margin-bottom:-4px}
+.explainbox{margin-top:12px;border:1px solid rgba(76,155,232,.28);background:rgba(76,155,232,.06);
+border-radius:10px;padding:12px 14px}
+.explainbox-h{font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);
+font-weight:700;margin-bottom:7px}
 
 /* Review page — verdict-first assessment + readable prose */
 .verdict{display:flex;align-items:center;gap:14px;border:1px solid var(--line);border-radius:14px;
@@ -742,3 +741,11 @@ list-style:none;user-select:none}
 color:var(--dim)}
 .fbody{max-width:80ch}
 .explainbox .dbody{max-width:76ch}
+
+/* Assessment key points + clamped summary */
+.keypoints{margin:0 0 14px;padding-left:22px;max-width:78ch}
+.keypoints li{margin:7px 0;line-height:1.55;font-size:.92rem}
+.keypoints li::marker{color:var(--accent,#7c83f0)}
+.clamp{display:-webkit-box;-webkit-line-clamp:4;line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.morebtn{margin-top:8px;background:none;border:0;color:var(--blue);font:inherit;font-size:.82rem;
+cursor:pointer;padding:0;text-decoration:underline}

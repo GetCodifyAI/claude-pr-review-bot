@@ -2125,6 +2125,7 @@ class Handler(BaseHTTPRequestHandler):
                              "agreement": conv_tags.get(prbot_agree._cid(c))})
         data = {
             "event": ev, "summary": rev.get("summary", ""),
+            "keyPoints": [str(x).strip() for x in (rev.get("keyPoints") or []) if str(x).strip()][:6],
             "explainer": rev.get("explainer", ""), "analysis": rev.get("analysis", ""),
             "chips": [{"kind": k, "n": n, "label": SEV_LABEL.get(k, k)}
                       for k, n in sorted(cs.items(), key=lambda kv: SEV_ORDER.get(kv[0], 9))],
