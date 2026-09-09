@@ -625,6 +625,26 @@ def effective_skill(login):
     return "team", "the team default"
 
 
+# --- Phase 1: per-user re-run cache (content addressing) --------------------------------------
+# Bump when the review prompt/output format changes, so old cached reviews are never served under
+# a new schema (a changed constant simply changes every key, so nothing has to be invalidated).
+REVIEW_SCHEMA_VERSION = "rv1"
+
+
+def review_cache_key(login, head, effort, focus, model):
+    """Hash of everything that determines a review's output, PLUS the reviewer — the cache is
+    per-user, so it only ever reuses YOUR own identical re-run on the same commit, never serves
+    one reviewer's generation to another. Resolves the *skill text* (not its name), so editing a
+    skill changes the key automatically."""
+    choice, _ = effective_skill(login)
+    skill_text = read_skill(login) if choice == "own" else read_skill("global")
+    blob = "\x00".join([REVIEW_SCHEMA_VERSION, login or "", (head or "").strip(),
+                         effort or "", (focus or "").strip(), model or "",
+                         sha256(skill_text.encode()).hexdigest(),
+                         sha256(effort_depth(effort).encode()).hexdigest()])
+    return sha256(blob.encode()).hexdigest()
+
+
 # --- review effort ---------------------------------------------------------------------------
 # How deep a review goes. The dashboard auto-sizes from the diff and lets the reviewer override;
 # run-review.sh maps the key to a timeout + a depth instruction. Order is low → high.
@@ -1930,6 +1950,7 @@ class Handler(BaseHTTPRequestHandler):
             "findings": findings, "count": len(comments),
             "posted": upath(pr, user, "posted.json").exists(),
             "postLabel": "Post selected" + (" (dry run)" if DRY_RUN else " to GitHub"),
+            "reused": upath(pr, user, "cached").exists(),
         }
         if appr.get("at"):
             data["approved"] = self._approved_data(appr, user)
@@ -2444,12 +2465,40 @@ class Handler(BaseHTTPRequestHandler):
         focus = (focus or "").strip()[:2000]
         archive_review(pr, user)                    # keep the prior run in history/
         mdl = model if model in MODEL_KEYS else ""
+        head = (meta.get("head") or "").strip()
+        # Phase 1 — reuse YOUR own identical re-run on this commit: 0 tokens, no LLM call.
+        key = review_cache_key(user, head, eff, focus, mdl)
+        cf = d / "cache" / f"{key}.json"
+        cached = None
+        if cf.exists():
+            try:
+                cached = json.loads(cf.read_text())
+            except (OSError, json.JSONDecodeError):
+                cached = None
+        if cached and cached.get("review"):
+            # (the current review was already archived to history/ just above)
+            (d / "review.json").write_text(json.dumps(cached["review"]))
+            (d / "effort").write_text(eff)
+            (d / "focus").write_text(focus)
+            (d / "model").write_text(mdl)
+            (d / "head").write_text(head)
+            (d / "skill").write_text(cached.get("skill", "global"))
+            if cached.get("risk"):
+                (d / "risk").write_text(cached["risk"])
+            if cached.get("usage") is not None:
+                (d / "usage.json").write_text(json.dumps(cached["usage"]))
+            (d / "status").write_text("done")
+            (d / "cached").write_text(json.dumps(
+                {"at": int(time.time()), "source_at": cached.get("created_at", 0)}))
+            return True
+        (d / "cached").unlink(missing_ok=True)       # a fresh run is not a reuse
         (d / "effort").write_text(eff)
         (d / "focus").write_text(focus)
         (d / "model").write_text(mdl)
         (d / "status").write_text("queued")
         choice, _ = effective_skill(user)
         env = review_env(user)
+        env["PRBOT_CACHE_KEY"] = key
         env["PRBOT_EFFORT"] = eff
         env["PRBOT_DEPTH"] = effort_depth(eff)
         env["PRBOT_FOCUS"] = focus

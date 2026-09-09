@@ -381,6 +381,12 @@ function ReviewBody({ data, onDone }: { data: PrData; onDone: () => void }) {
       {banner && <Banner html={banner} />}
 
       <h2>Assessment</h2>
+      {rev.reused && (
+        <div className="banner ok">
+          <span>♻️</span>
+          <div>Reused your earlier run of this exact configuration on this commit — 0 new tokens.</div>
+        </div>
+      )}
       <div className="card">
         <div className="meta">
           <span className={"pill " + (rev.event === "REQUEST_CHANGES" ? "blocker" : "posted")}>{rev.event}</span>

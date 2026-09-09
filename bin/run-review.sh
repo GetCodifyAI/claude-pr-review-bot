@@ -86,6 +86,21 @@ echo "$risk" | xargs > "$DIR/risk" 2>/dev/null || true
 status "checking out the branch"
 git -C "$BASE" fetch -q origin "$branch" || fail "could not fetch $branch"
 wt="$WT/$PR"
+# Phase 1 — write this result to the per-user content-addressed cache (if the server keyed it).
+CACHE_KEY="${PRBOT_CACHE_KEY:-}"
+if [ -n "$CACHE_KEY" ]; then
+  mkdir -p "$DIR/cache"
+  usage_json="null"; [ -s "$DIR/usage.json" ] && usage_json=$(cat "$DIR/usage.json")
+  jq -n --slurpfile r "$DIR/review.json" --argjson u "$usage_json" \
+        --arg risk "$(cat "$DIR/risk" 2>/dev/null || true)" \
+        --arg skill "$(cat "$DIR/skill" 2>/dev/null || echo global)" \
+        --arg head "$(cat "$DIR/head" 2>/dev/null || true)" \
+        --arg eff "$EFFORT" --arg foc "$FOCUS" --arg mdl "$MODEL" \
+        --argjson created "$(date +%s)" '
+        {review:$r[0], usage:$u, risk:$risk, skill:$skill, head:$head,
+         effort:$eff, focus:$foc, model:$mdl, created_at:$created}' \
+    > "$DIR/cache/$CACHE_KEY.json" 2>/dev/null || rm -f "$DIR/cache/$CACHE_KEY.json"
+fi
 git -C "$BASE" worktree remove --force "$wt" 2>/dev/null || true
 git -C "$BASE" worktree add -q --force -B "review-$PR" "$wt" "origin/$branch" \
   || fail "could not create worktree"
@@ -102,6 +117,7 @@ status "reviewing the diff"
 # user, CLAUDE_CODE_OAUTH_TOKEN) when it spawns us. Recorded so the page can say so.
 echo "${PRBOT_RUN_AS:-shared}" > "$DIR/runner"
 echo "[#$PR] running on: ${PRBOT_RUN_AS:-shared}"
+rm -f "$DIR/cached"          # a fresh run replaces any reused (cached) result
 rm -f "$wt/review.json"
 # Learnings: findings reviewers have dropped as noise or reworded on this repo, so the agent
 # stops re-raising rejected ones. Empty on a fresh box. Rendered by prbot_learn.py (beside us).

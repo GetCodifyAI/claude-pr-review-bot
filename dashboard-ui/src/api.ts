@@ -112,6 +112,7 @@ export interface ReviewData {
   count: number;
   posted: boolean;
   postLabel: string;
+  reused?: boolean;
   approve?: { lgtm: boolean; blockers: number; defaultMsg: string };
   approved?: ApprovedData;
 }
