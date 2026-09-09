@@ -840,6 +840,41 @@ def archive_review(pr, login):
     (d / "review.json").unlink(missing_ok=True)
 
 
+def others_on_head(pr, exclude_login):
+    """Other reviewers who already have a COMPLETED run on this PR's CURRENT head SHA — the data
+    behind the 'someone already reviewed this; look at something different' nudge (Phase 2).
+    Empty until the PR has a cached head. Only counts genuinely finished runs."""
+    meta, _ = pr_meta(pr)
+    head = (meta.get("head") or "").strip()
+    base = STATE / str(pr) / "users"
+    if not head or not base.is_dir():
+        return []
+    out = []
+    for d in sorted(base.iterdir()):
+        login = d.name
+        if login == exclude_login or not d.is_dir():
+            continue
+        hf = d / "head"
+        if not (hf.exists() and hf.read_text().strip() == head):
+            continue
+        if not (d / "review.json").exists():
+            continue
+        if pr_state(str(pr), login) in ("reviewing", "queued", "failed", "stopped"):
+            continue
+        rd = lambda name: ((d / name).read_text().strip() if (d / name).exists() else "")
+        eff = rd("effort"); skl = rd("skill") or "global"
+        try:
+            when = int((d / "review.json").stat().st_mtime)
+        except OSError:
+            when = 0
+        out.append({"login": login,
+                    "effort": EFFORT.get(eff, (eff or "?",))[0],
+                    "effortKey": eff, "focus": rd("focus"), "model": rd("model"),
+                    "skill": ("team default" if skl == "global" else f"{skl}'s skill"),
+                    "skillKey": skl, "when": ago(when) if when else ""})
+    return out
+
+
 def review_history(pr, login):
     """Past runs, newest first: list of (ts, effort, focus, findings, event)."""
     hd = udir(pr, login) / "history"
@@ -1761,13 +1796,14 @@ class Handler(BaseHTTPRequestHandler):
             return self.api_json(self.api_stack(pr, user))
         return self.api_json({"error": "not found"}, 404)
 
-    def _run_form_data(self, user, meta):
+    def _run_form_data(self, user, meta, pr=None):
         _, skill_label = effective_skill(user)
         return {"suggested": autosize_effort(meta),
                 "levels": [{"key": k, "name": EFFORT[k][0], "sub": EFFORT[k][1]}
                            for k in EFFORT_ORDER],
                 "models": [{"key": k, "name": n, "sub": sub} for k, n, sub in MODELS],
-                "skillLabel": skill_label}
+                "skillLabel": skill_label,
+                "othersOnHead": (others_on_head(pr, user) if pr else [])}
 
     def _tok(self, action, pr, ttl=ACTION_TTL):
         exp, sig = mint(action, pr, ttl)
@@ -1816,7 +1852,7 @@ class Handler(BaseHTTPRequestHandler):
             "timeline": self._timeline_data(pr, user),
             "reviewers": (pr_reviewers(pr) if st not in ("reviewing", "queued") else None),
             "claudeConnected": claude_connected(user),
-            "runForm": self._run_form_data(user, meta),
+            "runForm": self._run_form_data(user, meta, pr),
             "tokens": {"review": self._tok("review", pr, PAGE_TTL),
                        "stop": self._tok("stop", pr), "post": self._tok("post", pr),
                        "approve": self._tok("approve", pr), "markdone": self._tok("markdone", pr),

@@ -634,3 +634,12 @@ box-shadow:0 30px 80px -30px rgba(0,0,0,.9);animation:rise .3s both}
 @media(max-width:640px){.wrap{padding:20px 15px 0}.thread{margin-left:0}
 h1{font-size:1.28rem}.topbar{padding:0 15px}
 .tourcard{left:50%!important;top:auto!important;bottom:16px;transform:translateX(-50%)!important}}
+
+/* Phase 2 — 'someone already reviewed this commit' differentiation nudge */
+.nudge{border:1px solid var(--line);background:var(--panel2);border-radius:11px;padding:11px 13px;
+margin-bottom:14px}
+.nudge-h{font-weight:600;font-size:.9rem;margin-bottom:5px}
+.nudge-list{margin:0 0 7px;padding-left:18px;font-size:.82rem;color:var(--dim);line-height:1.5}
+.nudge-cta{font-size:.82rem;color:var(--dim);line-height:1.5}
+.linkbtn{background:none;border:0;color:var(--blue);cursor:pointer;font:inherit;padding:0;
+text-decoration:underline}

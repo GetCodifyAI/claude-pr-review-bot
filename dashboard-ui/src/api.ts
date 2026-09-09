@@ -120,7 +120,23 @@ export interface Reviewer { login: string; state: string }
 export interface ReviewersData { reviewers: Reviewer[]; decision: string | null }
 export interface TimelineStep { label: string; done: boolean; note: string }
 export interface EffortLevel { key: string; name: string; sub: string }
-export interface RunFormData { suggested: string; levels: EffortLevel[]; models: EffortLevel[]; skillLabel: string }
+export interface OtherRun {
+  login: string;
+  effort: string;
+  effortKey: string;
+  focus: string;
+  model: string;
+  skill: string;
+  skillKey: string;
+  when: string;
+}
+export interface RunFormData {
+  suggested: string;
+  levels: EffortLevel[];
+  models: EffortLevel[];
+  skillLabel: string;
+  othersOnHead: OtherRun[];
+}
 export interface Risk { icon: string; title: string; note: string }
 export interface HistoryRun {
   ts: number;

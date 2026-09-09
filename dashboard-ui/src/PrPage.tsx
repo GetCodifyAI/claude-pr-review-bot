@@ -96,6 +96,8 @@ function RunForm({
   const [focus, setFocus] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const focusRef = useRef<HTMLTextAreaElement>(null);
+  const others = form.othersOnHead || [];
   if (!connected) return <ClaudeGate action="review" />;
   return (
     <form
@@ -120,6 +122,32 @@ function RunForm({
         <div className="banner warn">
           <span>⚠️</span>
           <div>{err}</div>
+        </div>
+      )}
+      {others.length > 0 && (
+        <div className="nudge">
+          <div className="nudge-h">
+            {others.length === 1
+              ? `${others[0].login} already reviewed this commit`
+              : `${others.length} reviewers already reviewed this commit`}
+          </div>
+          <ul className="nudge-list">
+            {others.map((o) => (
+              <li key={o.login}>
+                <b>{o.login}</b> — {o.effort}
+                {o.model ? ` · ${o.model}` : ""} · {o.skill}
+                {o.focus ? ` · focus: “${o.focus}”` : " · no focus"}
+                {o.when ? ` · ${o.when}` : ""}
+              </li>
+            ))}
+          </ul>
+          <div className="nudge-cta">
+            A second review adds the most when it checks something the first didn’t — add a focus
+            below, or switch skills on the Skills page. Or run the same way to compare notes.{" "}
+            <button type="button" className="linkbtn" onClick={() => focusRef.current?.focus()}>
+              Add a focus
+            </button>
+          </div>
         </div>
       )}
       <div className="effort-lbl">Effort</div>
@@ -157,6 +185,7 @@ function RunForm({
       <div className="focuswrap">
         <div className="effort-lbl">Focus — optional</div>
         <textarea
+          ref={focusRef}
           className="in"
           rows={2}
           value={focus}
