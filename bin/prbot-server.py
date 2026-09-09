@@ -2090,6 +2090,19 @@ class Handler(BaseHTTPRequestHandler):
                 "body": appr.get("body", ""), "user": user}
 
     @staticmethod
+    def _as_markdown(v):
+        """Coerce a field that may be a markdown string OR a list of bullet strings (the agent
+        sometimes returns bullets as a JSON array) into a single markdown string."""
+        if isinstance(v, list):
+            out = []
+            for x in v:
+                t = str(x).strip()
+                if t:
+                    out.append(t if t[:1] in "-*#>" else f"- {t}")
+            return "\n".join(out)
+        return str(v or "")
+
+    @staticmethod
     def _fallback_title(c):
         """A plain title for reviews written before title/impact existed: first line of the body,
         stripped of markdown, or the location."""
@@ -2124,9 +2137,10 @@ class Handler(BaseHTTPRequestHandler):
                                                 and (c.get("impact") or "").strip()),
                              "agreement": conv_tags.get(prbot_agree._cid(c))})
         data = {
-            "event": ev, "summary": rev.get("summary", ""),
+            "event": ev, "summary": self._as_markdown(rev.get("summary")),
             "keyPoints": [str(x).strip() for x in (rev.get("keyPoints") or []) if str(x).strip()][:6],
-            "explainer": rev.get("explainer", ""), "analysis": rev.get("analysis", ""),
+            "explainer": self._as_markdown(rev.get("explainer")),
+            "analysis": self._as_markdown(rev.get("analysis")),
             "chips": [{"kind": k, "n": n, "label": SEV_LABEL.get(k, k)}
                       for k, n in sorted(cs.items(), key=lambda kv: SEV_ORDER.get(kv[0], 9))],
             "findings": findings, "count": len(comments),
