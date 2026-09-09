@@ -274,13 +274,33 @@ function FindingCard({
   onToggle,
   body,
   onBody,
+  pr,
+  explainToken,
 }: {
   f: Finding;
   checked: boolean;
   onToggle: () => void;
   body: string;
   onBody: (v: string) => void;
+  pr: string;
+  explainToken: Token;
 }) {
+  const [exp, setExp] = useState("");
+  const [expLoading, setExpLoading] = useState(false);
+  const [expErr, setExpErr] = useState("");
+  const explain = async () => {
+    if (expLoading) return;
+    setExpErr("");
+    setExpLoading(true);
+    try {
+      const r = await api.explain(pr, explainToken, f.i);
+      setExp(r.md);
+    } catch {
+      setExpErr("Couldn't explain this one — try again.");
+    } finally {
+      setExpLoading(false);
+    }
+  };
   return (
     <div className="finding">
       <div className="fhead">
@@ -306,6 +326,18 @@ function FindingCard({
       {f.impact && (
         <div className="fimpact">
           <span className="fimpact-l">Why it matters</span> {f.impact}
+        </div>
+      )}
+      {!exp && (
+        <button type="button" className="explainbtn" onClick={explain} disabled={expLoading}>
+          {expLoading ? "Explaining…" : "🟢 Explain simply & how to verify"}
+        </button>
+      )}
+      {expErr && <div className="fimpact" style={{ color: "var(--red, #e5658a)" }}>{expErr}</div>}
+      {exp && (
+        <div className="explainbox">
+          <div className="explainbox-h">Plain-language explanation</div>
+          <Md className="dbody">{exp}</Md>
         </div>
       )}
       <details className="fdetail">
@@ -383,6 +415,8 @@ function ReviewBody({ data, onDone }: { data: PrData; onDone: () => void }) {
       onToggle={() => toggle(f.i)}
       body={bodies[f.i] ?? ""}
       onBody={(v) => setBodies((b) => ({ ...b, [f.i]: v }))}
+      pr={data.pr}
+      explainToken={data.tokens.explain}
     />
   );
 

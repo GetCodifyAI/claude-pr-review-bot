@@ -706,3 +706,14 @@ padding:3px 0;user-select:none}
 .fdetail>summary::-webkit-details-marker{display:none}
 .fdetail>summary::before{content:"▸ ";color:var(--faint)}
 .fdetail[open]>summary::before{content:"▾ "}
+
+/* On-demand plain-language explanation of a finding */
+.explainbtn{margin-top:9px;font-size:.8rem;color:var(--blue);background:none;
+border:1px dashed var(--line);border-radius:8px;padding:6px 11px;cursor:pointer;font:inherit;
+font-size:.8rem}
+.explainbtn:hover{background:var(--panel2)}
+.explainbtn:disabled{cursor:default;opacity:.6}
+.explainbox{margin-top:10px;border:1px solid rgba(76,155,232,.3);background:rgba(76,155,232,.06);
+border-radius:10px;padding:11px 13px}
+.explainbox-h{font-size:.74rem;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);
+font-weight:700;margin-bottom:6px}

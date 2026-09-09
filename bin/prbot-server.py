@@ -994,6 +994,65 @@ def convergence(pr, head, viewer):
     return tags, ar, n
 
 
+def explain_finding(pr, user, idx):
+    """(markdown, error) — an on-demand plain-language explanation + how-to-verify for ONE finding,
+    run on the user's own Claude account (haiku, one turn). Cached per finding-content so a repeat
+    click is instant and free. Dashboard-only: never touches GitHub or the posted comment."""
+    rev = load_review(pr, user) or {}
+    comments = sorted(rev.get("comments", []), key=lambda c: SEV_ORDER.get(c.get("severity"), 9))
+    if idx < 0 or idx >= len(comments):
+        return None, "That finding no longer exists — re-open the review."
+    c = comments[idx]
+    h = sha256((str(idx) + "\x00" + (c.get("body") or "")).encode()).hexdigest()[:16]
+    cf = udir(pr, user) / "explain" / f"{h}.md"
+    if cf.exists():
+        try:
+            return cf.read_text(), None
+        except OSError:
+            pass
+    tok = user_claude_token(user)
+    if not tok:
+        return None, "Connect your Claude account to use this."
+    meta, _ = pr_meta(pr)
+    ctx = (f"PR title: {meta.get('title', '')}\n"
+           f"What the PR does: {(rev.get('explainer') or rev.get('summary') or '').strip()}\n\n"
+           f"Finding location: {c.get('path')}:{c.get('line')} (severity {c.get('severity')})\n"
+           f"Finding title: {c.get('title', '')}\n"
+           f"Finding detail:\n{c.get('body', '')}")
+    prompt = (
+        "A reviewer who has NOT read this whole PR needs to decide whether to accept the "
+        "code-review finding below. Explain it so a JUNIOR engineer fully understands, using the "
+        "PR context given. Reply in GitHub markdown with EXACTLY these two sections and nothing "
+        "else:\n\n"
+        "**In plain words**\n- 2 to 4 short bullets: what the problem is and why it matters, in "
+        "everyday language, no jargon or symbol names.\n\n"
+        "**How to check it yourself**\n- 1 to 3 concrete steps to confirm in ~30 seconds whether "
+        "the finding is real: which file/function to open, what to look for, and what a broken vs. "
+        "a fine case looks like.\n\n"
+        "Be specific to THIS finding; do not restate it verbatim.\n\n---\n" + ctx)
+    try:
+        r = subprocess.run(["claude", "-p", prompt, "--max-turns", "1", "--model", "haiku"],
+                           capture_output=True, text=True, timeout=90,
+                           stdin=subprocess.DEVNULL,
+                           env={**os.environ, "CLAUDE_CODE_OAUTH_TOKEN": tok})
+    except FileNotFoundError:
+        return None, "claude is not installed on this box."
+    except subprocess.TimeoutExpired:
+        return None, "Claude did not answer in time — try again."
+    if r.returncode != 0:
+        tail = ((r.stderr or r.stdout or "error").strip().splitlines() or ["error"])[-1]
+        return None, tail[:200]
+    md = (r.stdout or "").strip()
+    if not md:
+        return None, "No explanation was produced — try again."
+    try:
+        cf.parent.mkdir(parents=True, exist_ok=True)
+        cf.write_text(md)
+    except OSError:
+        pass
+    return md, None
+
+
 def review_history(pr, login):
     """Past runs, newest first: list of (ts, effort, focus, findings, event)."""
     hd = udir(pr, login) / "history"
@@ -1978,7 +2037,8 @@ class Handler(BaseHTTPRequestHandler):
                        "stop": self._tok("stop", pr), "post": self._tok("post", pr),
                        "approve": self._tok("approve", pr), "markdone": self._tok("markdone", pr),
                        "archive": self._tok("archive", pr),
-                       "unarchive": self._tok("unarchive", pr)},
+                       "unarchive": self._tok("unarchive", pr),
+                       "explain": self._tok("explain", pr, PAGE_TTL)},
             "history": review_history(pr, user),
         }
         if st == "reviewing":
@@ -2353,6 +2413,17 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 f.unlink(missing_ok=True)
             return self.api_json({"ok": True})
+        if route == "/api/explain":
+            if err := gate("explain"):
+                return self.api_json({"error": err}, 403)
+            try:
+                idx = int(body.get("idx"))
+            except (TypeError, ValueError):
+                return self.api_json({"error": "missing finding"}, 400)
+            md, err = explain_finding(pr, user, idx)
+            if err:
+                return self.api_json({"error": err}, 400)
+            return self.api_json({"md": md})
         if route == "/api/post":
             if err := gate("post"):
                 return self.api_json({"error": err}, 403)

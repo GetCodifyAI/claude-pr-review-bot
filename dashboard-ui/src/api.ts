@@ -325,6 +325,8 @@ export const api = {
   login: (pat: string) => post<{ ok: boolean; login: string }>("/login", { pat }),
   logout: () => post<{ ok: boolean }>("/logout"),
   pr: (pr: string, v?: string) => get<PrData>(`/pr?pr=${pr}${v ? `&v=${v}` : ""}`),
+  explain: (pr: string, t: Token, idx: number) =>
+    post<{ md: string }>("/explain", { pr, ...t, idx }),
   review: (pr: string, t: Token, effort: string, focus: string, model: string) =>
     post<{ ok: boolean; started?: boolean }>("/review", { pr, ...t, effort, focus, model }),
   stop: (pr: string, t: Token) => post<{ ok: boolean; confirmed: boolean }>("/stop", { pr, ...t }),
