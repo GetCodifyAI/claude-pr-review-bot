@@ -1249,7 +1249,7 @@ def can_approve(pr, login):
         return False, "That PR is still a draft."
     if ((d.get("user") or {}).get("login")) == login:
         return False, "GitHub does not allow approving your own PR."
-    if not (STATE / str(pr) / "review.json").exists():
+    if not upath(pr, login, "review.json").exists():
         return False, "No review has been run for this PR on this box."
     return True, ""
 STATIC_DIR = BIN / "static"
@@ -2248,7 +2248,7 @@ class Handler(BaseHTTPRequestHandler):
         oauth_store(login, d, name, prev)
         print(f"login (github): {login}", flush=True)
         if not prev.get("slack_id"):
-            nxt = "/prbot/integrations?welcome=1&next=" + quote(nxt, safe="")
+            nxt = "/integrations?welcome=1&next=" + quote(nxt, safe="")
         return self.redirect(nxt, cookie=session_cookie(login, self.headers.get("Host", "")))
 
     def _claude_result(self, user, step, form):
@@ -2557,7 +2557,7 @@ class Handler(BaseHTTPRequestHandler):
         if not tok:
             return ("<div class='banner err'><span>🚫</span><div>"
                     "Your stored GitHub token could not be read — "
-                    "paste it again in <a href='/prbot/integrations'>settings</a>.</div></div>")
+                    "paste it again in <a href='/integrations'>settings</a>.</div></div>")
         r = gh(["api", "--method", "POST", f"repos/{REPO}/pulls/{pr}/reviews",
                 "--input", str(ud / "payload.json")], token=tok)
         if r.returncode != 0:
@@ -2583,7 +2583,7 @@ class Handler(BaseHTTPRequestHandler):
         tok = user_pat(user)
         if not tok:
             return ("<div class='banner err'><span>🚫</span><div>Your stored GitHub token could "
-                    "not be read — paste it again in <a href='/prbot/integrations'>settings</a>."
+                    "not be read — paste it again in <a href='/integrations'>settings</a>."
                     "</div></div>")
         ok, why = can_approve(pr, user)
         if not ok:
