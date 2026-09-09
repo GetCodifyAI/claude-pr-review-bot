@@ -86,21 +86,6 @@ echo "$risk" | xargs > "$DIR/risk" 2>/dev/null || true
 status "checking out the branch"
 git -C "$BASE" fetch -q origin "$branch" || fail "could not fetch $branch"
 wt="$WT/$PR"
-# Phase 1 — write this result to the per-user content-addressed cache (if the server keyed it).
-CACHE_KEY="${PRBOT_CACHE_KEY:-}"
-if [ -n "$CACHE_KEY" ]; then
-  mkdir -p "$DIR/cache"
-  usage_json="null"; [ -s "$DIR/usage.json" ] && usage_json=$(cat "$DIR/usage.json")
-  jq -n --slurpfile r "$DIR/review.json" --argjson u "$usage_json" \
-        --arg risk "$(cat "$DIR/risk" 2>/dev/null || true)" \
-        --arg skill "$(cat "$DIR/skill" 2>/dev/null || echo global)" \
-        --arg head "$(cat "$DIR/head" 2>/dev/null || true)" \
-        --arg eff "$EFFORT" --arg foc "$FOCUS" --arg mdl "$MODEL" \
-        --argjson created "$(date +%s)" '
-        {review:$r[0], usage:$u, risk:$risk, skill:$skill, head:$head,
-         effort:$eff, focus:$foc, model:$mdl, created_at:$created}' \
-    > "$DIR/cache/$CACHE_KEY.json" 2>/dev/null || rm -f "$DIR/cache/$CACHE_KEY.json"
-fi
 git -C "$BASE" worktree remove --force "$wt" 2>/dev/null || true
 git -C "$BASE" worktree add -q --force -B "review-$PR" "$wt" "origin/$branch" \
   || fail "could not create worktree"
@@ -223,6 +208,22 @@ if [ -n "$usage_line" ]; then
       cost_usd: (.total_cost_usd // 0),
       duration_ms: (.duration_ms // 0)
     }' > "$DIR/usage.json" 2>/dev/null || rm -f "$DIR/usage.json"
+fi
+
+# Phase 1 — write this result to the per-user content-addressed cache (if the server keyed it).
+CACHE_KEY="${PRBOT_CACHE_KEY:-}"
+if [ -n "$CACHE_KEY" ]; then
+  mkdir -p "$DIR/cache"
+  usage_json="null"; [ -s "$DIR/usage.json" ] && usage_json=$(cat "$DIR/usage.json")
+  jq -n --slurpfile r "$DIR/review.json" --argjson u "$usage_json" \
+        --arg risk "$(cat "$DIR/risk" 2>/dev/null || true)" \
+        --arg skill "$(cat "$DIR/skill" 2>/dev/null || echo global)" \
+        --arg head "$(cat "$DIR/head" 2>/dev/null || true)" \
+        --arg eff "${EFFORT:-}" --arg foc "${FOCUS:-}" --arg mdl "${MODEL:-}" \
+        --argjson created "$(date +%s)" '
+        {review:$r[0], usage:$u, risk:$risk, skill:$skill, head:$head,
+         effort:$eff, focus:$foc, model:$mdl, created_at:$created}' \
+    > "$DIR/cache/$CACHE_KEY.json" 2>/dev/null || rm -f "$DIR/cache/$CACHE_KEY.json"
 fi
 git -C "$BASE" worktree remove --force "$wt" 2>/dev/null || true
 
