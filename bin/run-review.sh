@@ -85,9 +85,10 @@ echo "$risk" | xargs > "$DIR/risk" 2>/dev/null || true
 # worktree mid-review.
 status "checking out the branch"
 git -C "$BASE" fetch -q origin "$branch" || fail "could not fetch $branch"
-wt="$WT/$PR"
+slug="${ACTOR:-shared}"
+wt="$WT/$PR-$slug"   # per reviewer, not per PR — avoid cross-reviewer worktree collisions
 git -C "$BASE" worktree remove --force "$wt" 2>/dev/null || true
-git -C "$BASE" worktree add -q --force -B "review-$PR" "$wt" "origin/$branch" \
+git -C "$BASE" worktree add -q --force -B "review-$PR-$slug" "$wt" "origin/$branch" \
   || fail "could not create worktree"
 
 # One review at a time, box-wide. The per-PR lock above stops duplicates of the SAME review;
